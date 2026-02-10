@@ -526,7 +526,7 @@ function Dashboard({ state, dispatch }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           {editingTitle ? (
             <input value={titleVal} onChange={(e) => setTitleVal(e.target.value)} autoFocus
@@ -539,7 +539,7 @@ function Dashboard({ state, dispatch }) {
           {!editingTitle && <button onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }} className="text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>}
         </div>
         <div className="flex items-center gap-2">
-          <Btn variant="default" onClick={() => exportDashboardCSV(state)}>Export</Btn>
+          {matches.length > 0 && <Btn variant="default" onClick={() => exportDashboardCSV(state)}>Export</Btn>}
           <Btn variant="primary" onClick={() => dispatch({ type: "SET_VIEW", view: "new-match" })}>New Match</Btn>
         </div>
       </div>
@@ -592,7 +592,7 @@ function Dashboard({ state, dispatch }) {
       )}
       <div className="space-y-3">
         <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Icon name="trophy" size={16} />Matches</h2>
-        {matches.length === 0 && <div className="text-center py-12 text-gray-400"><Icon name="trophy" size={48} /><p className="mt-3">No matches yet. Create your first match!</p></div>}
+        {matches.length === 0 && <div className="flex flex-col items-center justify-center py-12 text-gray-400"><Icon name="trophy" size={48} /><p className="mt-3 text-center">No matches yet. Create your first match!</p></div>}
         {matches.map((m) => {
           const result = m.status === "completed" ? (m.teamGoals > m.opponentGoals ? "W" : m.teamGoals < m.opponentGoals ? "L" : "D") : null;
           const resultColor = result === "W" ? "bg-emerald-500" : result === "L" ? "bg-red-500" : result === "D" ? "bg-amber-500" : "bg-blue-500";
