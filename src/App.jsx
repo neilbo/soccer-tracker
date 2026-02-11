@@ -616,6 +616,83 @@ function downloadCSV(content, filename) {
   URL.revokeObjectURL(url);
 }
 
+// --- ComboSelect ---
+
+function ComboSelect({ value, onChange, options, placeholder, error }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [touched, setTouched] = useState(false);
+  const inputRef = useRef(null);
+  const containerRef = useRef(null);
+
+  const filteredOptions = options
+    .filter((opt) => opt.toLowerCase().includes(filter.toLowerCase()))
+    .sort();
+
+  const showError = touched && error;
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelect = (option) => {
+    onChange(option);
+    setFilter("");
+    setIsOpen(false);
+    setTouched(true);
+  };
+
+  const handleInputChange = (val) => {
+    setFilter(val);
+    onChange(val);
+    setIsOpen(true);
+    setTouched(true);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => handleInputChange(e.target.value)}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setTouched(true)}
+        placeholder={placeholder}
+        className={`w-full px-4 py-2.5 rounded-xl border ${
+          showError
+            ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-100"
+            : "border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        } outline-none transition`}
+      />
+      {isOpen && (value || filter) && filteredOptions.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white rounded-xl border border-gray-200 shadow-lg max-h-60 overflow-y-auto">
+          {filteredOptions.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelect(option);
+              }}
+              className="w-full px-4 py-2.5 text-left hover:bg-blue-50 transition text-sm"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+      {showError && <p className="text-red-500 text-xs mt-1">Please enter an opponent name</p>}
+    </div>
+  );
+}
+
 // --- Squad ---
 
 function SquadView({ state, dispatch }) {
@@ -913,6 +990,26 @@ function NewMatch({ state, dispatch }) {
   const [touched, setTouched] = useState(false);
   const showError = touched && !opponent.trim();
   const existingTags = [...new Set(state.matches.map((m) => m.tag).filter(Boolean))].sort();
+  const clubNames = state.clubs.map((c) => c.name);
+
+  const handleCreateMatch = () => {
+    setTouched(true);
+    if (!opponent.trim()) return;
+
+    // Add club if it doesn't exist
+    if (opponent.trim() && !state.clubs.find((c) => c.name === opponent.trim())) {
+      dispatch({ type: "ADD_CLUB", name: opponent.trim() });
+    }
+
+    dispatch({
+      type: "CREATE_MATCH",
+      opponent: opponent.trim(),
+      venue,
+      date,
+      description: description.trim(),
+      tag: tag.trim(),
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -923,9 +1020,13 @@ function NewMatch({ state, dispatch }) {
       <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Opponent</label>
-          <input value={opponent} onChange={(e) => setOpponent(e.target.value)} onBlur={() => setTouched(true)} placeholder="e.g. City FC"
-            className={`w-full px-4 py-2.5 rounded-xl border ${showError ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-100" : "border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"} outline-none transition`} />
-          {showError && <p className="text-red-500 text-xs mt-1">Please enter an opponent name</p>}
+          <ComboSelect
+            value={opponent}
+            onChange={setOpponent}
+            options={clubNames}
+            placeholder="e.g. City FC"
+            error={showError}
+          />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
@@ -963,8 +1064,7 @@ function NewMatch({ state, dispatch }) {
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Round 3 of the winter comp, wet conditions expected..."
             className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition resize-none" rows={3} />
         </div>
-        <Btn variant="primary" size="lg" className="w-full"
-          onClick={() => { setTouched(true); if (opponent.trim()) dispatch({ type: "CREATE_MATCH", opponent: opponent.trim(), venue, date, description: description.trim(), tag: tag.trim() }); }}>
+        <Btn variant="primary" size="lg" className="w-full" onClick={handleCreateMatch}>
           Create Match
         </Btn>
       </div>
@@ -1194,6 +1294,15 @@ function MatchEdit({ state, dispatch }) {
   const [editNotes, setEditNotes] = useState("");
   const goBack = () => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" });
   const totalMatchMins = isCompleted ? Math.round(match.matchSeconds / 60) : 0;
+  const clubNames = state.clubs.map((c) => c.name);
+
+  const handleOpponentChange = (value) => {
+    // Add club if it doesn't exist
+    if (value.trim() && !state.clubs.find((c) => c.name === value.trim())) {
+      dispatch({ type: "ADD_CLUB", name: value.trim() });
+    }
+    dispatch({ type: "UPDATE_MATCH_META", opponent: value });
+  };
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -1294,8 +1403,13 @@ function MatchEdit({ state, dispatch }) {
       <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Opponent</label>
-          <input value={match.opponent} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", opponent: e.target.value })}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+          <ComboSelect
+            value={match.opponent}
+            onChange={handleOpponentChange}
+            options={clubNames}
+            placeholder="e.g. City FC"
+            error={false}
+          />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
