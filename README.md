@@ -1,3 +1,27 @@
+# Soccer Tracker
+
+Track matches, squad, and player stats. Data is stored in localStorage by default and can be synced to Supabase.
+
+## Supabase (optional)
+
+To persist data in Supabase:
+
+1. **Create a project** at [supabase.com](https://supabase.com) and get your project URL and anon key from **Project Settings → API**.
+
+2. **Run the migration** in the Supabase **SQL Editor**. Paste and run the contents of `supabase/migrations/20260211000000_create_app_state.sql`. This creates the `app_state` table and policies so the app can read/write one row of JSON state.
+
+3. **Configure env** in the project root:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and set:
+   - `VITE_SUPABASE_URL` — your project URL  
+   - `VITE_SUPABASE_ANON_KEY` — your anon (public) key  
+
+4. Restart the dev server. The app will load and save to Supabase; if env vars are missing, it continues to use only localStorage.
+
+---
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

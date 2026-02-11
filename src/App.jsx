@@ -1,5 +1,6 @@
 import { useState, useEffect, useReducer, useRef } from "react";
 import "./App.css";
+import { supabase, APP_STATE_ROW_ID } from "./supabaseClient";
 
 const DEFAULT_PLAYERS = [
   "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
@@ -30,20 +31,45 @@ function loadState() {
   return null;
 }
 
+function getPersistedPayload(state) {
+  return {
+    matches: state.matches,
+    squad: state.squad,
+    nextPlayerId: state.nextPlayerId,
+    teamTitle: state.teamTitle,
+    currentMatch: state.currentMatch,
+  };
+}
+
 function saveState(state) {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        matches: state.matches,
-        squad: state.squad,
-        nextPlayerId: state.nextPlayerId,
-        teamTitle: state.teamTitle,
-        currentMatch: state.currentMatch,
-      })
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getPersistedPayload(state)));
   } catch (e) {
     console.error("Failed to save state:", e);
+  }
+}
+
+async function loadFromSupabase() {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from("app_state").select("data").eq("id", APP_STATE_ROW_ID).single();
+    if (error || !data?.data) return null;
+    return data.data;
+  } catch (e) {
+    console.error("Failed to load from Supabase:", e);
+    return null;
+  }
+}
+
+async function saveToSupabase(state) {
+  if (!supabase) return;
+  try {
+    await supabase.from("app_state").upsert(
+      { id: APP_STATE_ROW_ID, data: getPersistedPayload(state), updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+  } catch (e) {
+    console.error("Failed to save to Supabase:", e);
   }
 }
 
@@ -992,14 +1018,21 @@ export default function App() {
   const saveTimeoutRef = useRef(null);
 
   useEffect(() => {
-    const data = loadState();
-    dispatch({ type: "LOAD_SAVED", data: data || initialState });
+    (async () => {
+      let data = null;
+      if (supabase) data = await loadFromSupabase();
+      if (!data) data = loadState();
+      dispatch({ type: "LOAD_SAVED", data: data || initialState });
+    })();
   }, []);
 
   useEffect(() => {
     if (!state.loaded) return;
     clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => saveState(state), 500);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveState(state);
+      saveToSupabase(state);
+    }, 500);
   }, [state]);
 
   useEffect(() => {
