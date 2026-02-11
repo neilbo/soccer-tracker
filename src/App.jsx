@@ -7,6 +7,12 @@ const DEFAULT_PLAYERS = [
   "Nash", "Ronnie", "Ruben", "Tyler", "Viraaj", "Zully"
 ];
 
+const DEFAULT_CLUBS = [
+  "Brighton Bulldogs", "Coolum FC", "Grange Thistle", "Ipswich Knights",
+  "Moreton City Excelsior", "Noosa Lions", "North Lakes United", "Pine Hills FC",
+  "Samford Rangers", "SWQ Thunder", "The Gap FC", "UQFC"
+];
+
 const TEAM_NAME = "North Star FC";
 const STORAGE_KEY = "soccer-tracker-data";
 
@@ -36,6 +42,8 @@ function getPersistedPayload(state) {
     matches: state.matches,
     squad: state.squad,
     nextPlayerId: state.nextPlayerId,
+    clubs: state.clubs,
+    nextClubId: state.nextClubId,
     teamTitle: state.teamTitle,
     currentMatch: state.currentMatch,
   };
@@ -144,6 +152,8 @@ const initialState = {
   currentMatch: null,
   squad: DEFAULT_PLAYERS.map((name, i) => ({ id: i, name })),
   nextPlayerId: DEFAULT_PLAYERS.length,
+  clubs: DEFAULT_CLUBS.map((name, i) => ({ id: i, name })),
+  nextClubId: DEFAULT_CLUBS.length,
   teamTitle: "U10 Academy",
   loaded: false,
 };
@@ -180,6 +190,19 @@ function reducer(state, action) {
       squad.splice(action.toIndex, 0, moved);
       return { ...state, squad };
     }
+    case "ADD_CLUB":
+      return {
+        ...state,
+        clubs: [...state.clubs, { id: state.nextClubId, name: action.name }].sort((a, b) => a.name.localeCompare(b.name)),
+        nextClubId: state.nextClubId + 1,
+      };
+    case "REMOVE_CLUB":
+      return { ...state, clubs: state.clubs.filter((c) => c.id !== action.clubId) };
+    case "RENAME_CLUB":
+      return {
+        ...state,
+        clubs: state.clubs.map((c) => (c.id === action.clubId ? { ...c, name: action.name } : c)).sort((a, b) => a.name.localeCompare(b.name)),
+      };
     case "CREATE_MATCH": {
       const match = {
         id: Date.now(),
@@ -659,6 +682,60 @@ function SquadView({ state, dispatch }) {
         </div>
         {state.squad.length === 0 && (
           <div className="p-8 text-center text-gray-400"><Icon name="users" size={40} /><p className="mt-2">No players in squad. Add some above!</p></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Clubs ---
+
+function ClubsView({ state, dispatch }) {
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editVal, setEditVal] = useState("");
+  const startEditing = (c) => { setEditingId(c.id); setEditVal(c.name); };
+  const saveEdit = () => { if (editVal.trim()) dispatch({ type: "RENAME_CLUB", clubId: editingId, name: editVal.trim() }); setEditingId(null); };
+  const addClub = () => { if (newName.trim()) { dispatch({ type: "ADD_CLUB", name: newName.trim() }); setNewName(""); } };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Clubs</h1>
+        <span className="text-sm text-gray-500 font-medium">{state.clubs.length} clubs</span>
+      </div>
+      <div className="bg-white rounded-2xl border border-gray-200 p-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Add new club</label>
+        <div className="flex gap-2">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addClub()} placeholder="Club name"
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+          <Btn variant="primary" size="md" onClick={addClub} disabled={!newName.trim()}>Add</Btn>
+        </div>
+      </div>
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">Manage Clubs</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Opposition clubs for match tracking</p>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {state.clubs.map((c, index) => (
+            <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition">
+              <span className="w-7 h-7 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center justify-center flex-shrink-0">{index + 1}</span>
+              {editingId === c.id ? (
+                <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} autoFocus
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-blue-300 outline-none text-sm" />
+              ) : (
+                <span className="flex-1 text-sm font-medium text-gray-800">{c.name}</span>
+              )}
+              <div className="flex items-center gap-1">
+                <button onClick={() => startEditing(c)} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>
+                <button onClick={() => dispatch({ type: "REMOVE_CLUB", clubId: c.id })} className="w-8 h-8 rounded-lg hover:bg-red-100 flex items-center justify-center text-gray-400 hover:text-red-500 transition"><Icon name="x" size={16} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {state.clubs.length === 0 && (
+          <div className="p-8 text-center text-gray-400"><Icon name="trophy" size={40} /><p className="mt-2">No clubs yet. Add some above!</p></div>
         )}
       </div>
     </div>
@@ -1541,6 +1618,7 @@ export default function App() {
     { view: "dashboard", icon: "home", label: "Dashboard" },
     { view: "new-match", icon: "plus", label: "New Match" },
     { view: "squad", icon: "users", label: "Squad" },
+    { view: "clubs", icon: "trophy", label: "Clubs" },
   ];
 
   if (!state.loaded) {
@@ -1594,6 +1672,7 @@ export default function App() {
           {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} />}
           {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} />}
           {state.view === "squad" && <SquadView state={state} dispatch={dispatch} />}
+          {state.view === "clubs" && <ClubsView state={state} dispatch={dispatch} />}
           {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} />}
           {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} />}
           {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} />}
