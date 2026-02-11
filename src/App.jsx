@@ -213,11 +213,9 @@ function reducer(state, action) {
         ...state,
         currentMatch: action.match,
         view:
-          action.match.status === "completed"
-            ? "match-review"
-            : action.match.status === "setup"
-            ? "setup"
-            : "match",
+          action.match.status === "live"
+            ? "match"
+            : "match-edit",
       };
     case "UPDATE_PLAYER_NAME": {
       const match = {
@@ -385,6 +383,31 @@ function reducer(state, action) {
         players: state.currentMatch.players.filter((p) => p.id !== action.playerId),
       };
       return { ...state, currentMatch: match, matches: state.matches.map((m) => (m.id === match.id ? match : m)) };
+    }
+    case "UPDATE_MATCH_META": {
+      const match = {
+        ...state.currentMatch,
+        opponent: action.opponent ?? state.currentMatch.opponent,
+        venue: action.venue ?? state.currentMatch.venue,
+        date: action.date ?? state.currentMatch.date,
+        description: action.description ?? state.currentMatch.description,
+        tag: action.tag ?? state.currentMatch.tag,
+      };
+      return { ...state, currentMatch: match, matches: state.matches.map((m) => (m.id === match.id ? match : m)) };
+    }
+    case "UPDATE_MATCH_SECONDS": {
+      const match = { ...state.currentMatch, matchSeconds: Math.max(0, action.seconds) };
+      return { ...state, currentMatch: match, matches: state.matches.map((m) => (m.id === match.id ? match : m)) };
+    }
+    case "DELETE_MATCH": {
+      const matchId = state.currentMatch?.id;
+      if (!matchId) return state;
+      return {
+        ...state,
+        matches: state.matches.filter((m) => m.id !== matchId),
+        currentMatch: null,
+        view: "dashboard",
+      };
     }
     default:
       return state;
@@ -796,10 +819,11 @@ function MatchSetup({ state, dispatch }) {
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "SET_VIEW", view: "dashboard" })}><Icon name="back" /></Btn>
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-900">vs {match.opponent}</h1>
           <p className="text-xs text-gray-500">{formatDate(match.date)} · {match.venue === "home" ? "Home" : "Away"}</p>
         </div>
+        <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "SET_VIEW", view: "match-edit" })}><Icon name="edit" size={18} /> Edit details</Btn>
       </div>
       <div className="bg-white rounded-2xl border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1072,6 +1096,277 @@ function MatchReview({ state, dispatch }) {
           </div>
         </div>
       )}
+      <div className="pt-2">
+        <Btn variant="default" size="md" className="w-full" onClick={() => dispatch({ type: "SET_VIEW", view: "match-edit" })}>
+          <Icon name="edit" size={16} /> Edit Match
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// --- Match Edit (non-live only; no timers) ---
+
+const DRAWER_DURATION_MS = 300;
+
+function MatchEdit({ state, dispatch }) {
+  const match = state.currentMatch;
+  const isCompleted = match.status === "completed";
+  const [expanded, setExpanded] = useState(null);
+  const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
+  const [drawerEntering, setDrawerEntering] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const goBack = () => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" });
+  const sorted = isCompleted ? [...match.players].sort((a, b) => b.seconds - a.seconds) : [];
+  const totalMatchMins = isCompleted ? Math.round(match.matchSeconds / 60) : 0;
+  const playersWithNotes = sorted.filter((p) => p.notes?.trim());
+
+  useEffect(() => {
+    if (timelineDrawerOpen) {
+      setDrawerEntering(false);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setDrawerEntering(true));
+      });
+      return () => cancelAnimationFrame(id);
+    } else {
+      setDrawerEntering(false);
+    }
+  }, [timelineDrawerOpen]);
+
+  useEffect(() => {
+    if (!drawerEntering && timelineDrawerOpen) {
+      const id = setTimeout(() => setTimelineDrawerOpen(false), DRAWER_DURATION_MS);
+      return () => clearTimeout(id);
+    }
+  }, [drawerEntering, timelineDrawerOpen]);
+
+  const closeTimelineDrawer = () => setDrawerEntering(false);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <Btn variant="ghost" size="sm" onClick={goBack}><Icon name="back" /></Btn>
+        <h1 className="text-xl font-bold text-gray-900">Edit Match</h1>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Opponent</label>
+          <input value={match.opponent} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", opponent: e.target.value })}
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+          <div className="flex gap-2">
+            {["home", "away"].map((v) => (
+              <button key={v} onClick={() => dispatch({ type: "UPDATE_MATCH_META", venue: v })}
+                className={`flex-1 py-2.5 rounded-xl font-medium transition ${match.venue === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                {v === "home" ? "🏠 Home" : "✈️ Away"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+          <input type="date" value={match.date} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", date: e.target.value })}
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Tag <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input value={match.tag || ""} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", tag: e.target.value })}
+            placeholder="e.g. Season 2026"
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+          <textarea value={match.description || ""} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", description: e.target.value })}
+            placeholder="Match notes..."
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none" rows={2} />
+        </div>
+      </div>
+
+      {isCompleted && (
+        <>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <h2 className="font-semibold text-gray-900 mb-3">Score & duration</h2>
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-1">Us</div>
+                <div className="flex items-center justify-center gap-2">
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: -1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
+                  <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.teamGoals}</span>
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: 1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
+                </div>
+              </div>
+              <span className="text-xl text-gray-300">–</span>
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-1">{match.opponent}</div>
+                <div className="flex items-center justify-center gap-2">
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: -1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
+                  <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.opponentGoals}</span>
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: 1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Match length (minutes)</label>
+              <input type="number" min={0} value={Math.round(match.matchSeconds / 60)} onChange={(e) => dispatch({ type: "UPDATE_MATCH_SECONDS", seconds: Math.max(0, parseInt(e.target.value, 10) || 0) * 60 })}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Player stats</h2></div>
+            <div className="divide-y divide-gray-100">
+              {match.players.map((p) => (
+                <div key={p.id} className="p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-gray-900 truncate">{p.name}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">⚽ {p.goals}  🅰️ {p.assists}{p.notes?.trim() ? "  · Note" : ""}</div>
+                    </div>
+                    <button onClick={() => setExpanded(expanded === p.id ? null : p.id)}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 ${expanded === p.id ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                      <Icon name={expanded === p.id ? "up" : "down"} size={18} />
+                    </button>
+                  </div>
+                  {expanded === p.id && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">⚽ Goals</label>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "goals", delta: -1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">−</button>
+                            <span className="w-8 text-center font-bold">{p.goals}</span>
+                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "goals", delta: 1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">+</button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">🅰️ Assists</label>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "assists", delta: -1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">−</button>
+                            <span className="w-8 text-center font-bold">{p.assists}</span>
+                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "assists", delta: 1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">+</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-1">Notes</label>
+                        <textarea value={p.notes || ""} onChange={(e) => dispatch({ type: "UPDATE_PLAYER_NOTES", playerId: p.id, notes: e.target.value })}
+                          placeholder="Optional notes..."
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-400 outline-none text-sm resize-none" rows={2} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Player Stats</h2></div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                  <th className="p-3">Player</th><th className="p-3 text-center">On</th><th className="p-3 text-center">Off</th><th className="p-3 text-center">⚽</th><th className="p-3 text-center">🅰️</th>
+                </tr></thead>
+                <tbody>{sorted.map((p) => {
+                  const minsOn = Math.round(p.seconds / 60);
+                  const minsOff = Math.max(0, totalMatchMins - minsOn);
+                  return (
+                    <tr key={p.id} className="border-b border-gray-50">
+                      <td className="p-3 font-medium">{p.name}</td>
+                      <td className="p-3 text-center font-mono text-emerald-600">{minsOn}′</td>
+                      <td className="p-3 text-center font-mono text-gray-400">{minsOff}′</td>
+                      <td className="p-3 text-center">{p.goals}</td>
+                      <td className="p-3 text-center">{p.assists}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <button type="button" onClick={() => setTimelineDrawerOpen(true)}
+              className="w-full flex items-center justify-between gap-3 p-4 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 transition text-left">
+              <span className="font-semibold text-gray-900">Player Timeline</span>
+              <Icon name="up" size={18} className="text-gray-400 rotate-90 shrink-0" />
+            </button>
+            {timelineDrawerOpen && (
+              <>
+                <div
+                  className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ease-out ${drawerEntering ? "opacity-100" : "opacity-0"}`}
+                  onClick={closeTimelineDrawer}
+                  aria-hidden
+                />
+                <div
+                  className={`fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] flex flex-col bg-white rounded-t-2xl shadow-xl transition-transform duration-300 ease-out ${drawerEntering ? "translate-y-0" : "translate-y-full"}`}
+                >
+                  <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
+                    <h2 className="font-semibold text-gray-900">Player Timeline</h2>
+                    <button type="button" onClick={closeTimelineDrawer} className="w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600">
+                      <Icon name="x" size={18} />
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto divide-y divide-gray-100 p-4">
+                    {sorted.filter((p) => p.events.length > 0).map((p) => {
+                      const stints = getPlayerStints(p, match.matchSeconds);
+                      return (
+                        <div key={p.id} className="py-4 first:pt-0">
+                          <div className="font-medium text-sm text-gray-900 mb-2">{p.name}</div>
+                          <div className="relative h-5 bg-gray-100 rounded-full overflow-hidden">
+                            {stints.map((s, i) => {
+                              const left = match.matchSeconds > 0 ? (s.on / match.matchSeconds) * 100 : 0;
+                              const width = match.matchSeconds > 0 ? ((s.off - s.on) / match.matchSeconds) * 100 : 0;
+                              return <div key={i} className="absolute top-0 h-full bg-blue-400 rounded-full" style={{ left: `${left}%`, width: `${Math.max(width, 1)}%` }} />;
+                            })}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {stints.map((s, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-mono">{formatTime(s.on)} → {formatTime(s.off)}</span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {playersWithNotes.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900 flex items-center gap-2"><Icon name="note" size={16} />Player Notes</h2></div>
+              <div className="divide-y divide-gray-100">
+                {playersWithNotes.map((p) => (
+                  <div key={p.id} className="p-4">
+                    <div className="font-medium text-sm text-gray-900 mb-1">{p.name}</div>
+                    <p className="text-sm text-gray-600">{p.notes}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      <Btn variant="primary" size="lg" className="w-full" onClick={goBack}>Done</Btn>
+
+      <div className="pt-2">
+        {!confirmDelete ? (
+          <Btn variant="danger" size="lg" className="w-full" onClick={() => setConfirmDelete(true)}>Delete Match</Btn>
+        ) : (
+          <div className="bg-red-50 rounded-2xl border border-red-200 p-4 space-y-3">
+            <p className="text-sm text-red-800 font-medium text-center">Are you sure you want to delete this match? This cannot be undone.</p>
+            <div className="flex gap-2">
+              <Btn variant="default" size="md" className="flex-1" onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+              <Btn variant="danger" size="md" className="flex-1" onClick={() => dispatch({ type: "DELETE_MATCH" })}>Delete Match</Btn>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1136,6 +1431,7 @@ export default function App() {
         {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} />}
         {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} />}
         {state.view === "match-review" && <MatchReview state={state} dispatch={dispatch} />}
+        {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} />}
       </div>
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex justify-around">
         {navItems.map((item) => (
