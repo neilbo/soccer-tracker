@@ -1,5 +1,6 @@
 import { useState, useEffect, useReducer, useRef } from "react";
 import "./App.css";
+import { supabase, APP_STATE_ROW_ID } from "./supabaseClient";
 
 const DEFAULT_PLAYERS = [
   "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
@@ -30,20 +31,108 @@ function loadState() {
   return null;
 }
 
+function getPersistedPayload(state) {
+  return {
+    matches: state.matches,
+    squad: state.squad,
+    nextPlayerId: state.nextPlayerId,
+    teamTitle: state.teamTitle,
+    currentMatch: state.currentMatch,
+  };
+}
+
 function saveState(state) {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        matches: state.matches,
-        squad: state.squad,
-        nextPlayerId: state.nextPlayerId,
-        teamTitle: state.teamTitle,
-        currentMatch: state.currentMatch,
-      })
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getPersistedPayload(state)));
   } catch (e) {
     console.error("Failed to save state:", e);
+  }
+}
+
+async function loadFromSupabase() {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from("app_state").select("data").eq("id", APP_STATE_ROW_ID).single();
+    if (error || !data?.data) return null;
+    return data.data;
+  } catch (e) {
+    console.error("Failed to load from Supabase:", e);
+    return null;
+  }
+}
+
+async function syncNormalizedToSupabase(state) {
+  if (!supabase) return;
+  const teamId = "default";
+  try {
+    await supabase.from("teams").upsert(
+      { id: teamId, title: state.teamTitle || "", updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+
+    await supabase.from("players").delete().eq("team_id", teamId);
+    if (state.squad?.length) {
+      await supabase.from("players").insert(
+        state.squad.map((p, i) => ({
+          id: p.id,
+          team_id: teamId,
+          name: p.name,
+          sort_order: i,
+        }))
+      );
+    }
+
+    for (const m of state.matches || []) {
+      await supabase.from("matches").upsert(
+        {
+          id: m.id,
+          team_id: teamId,
+          opponent: m.opponent || "",
+          venue: m.venue || "home",
+          date: m.date || "",
+          description: m.description || "",
+          tag: m.tag || "",
+          status: m.status || "setup",
+          team_goals: m.teamGoals ?? 0,
+          opponent_goals: m.opponentGoals ?? 0,
+          match_seconds: m.matchSeconds ?? 0,
+          match_running: !!m.matchRunning,
+        },
+        { onConflict: "id" }
+      );
+
+      await supabase.from("match_players").delete().eq("match_id", m.id);
+      if (m.players?.length) {
+        await supabase.from("match_players").insert(
+          m.players.map((p) => ({
+            match_id: m.id,
+            player_id: p.id,
+            player_name: p.name || "",
+            seconds: p.seconds ?? 0,
+            starting: !!p.starting,
+            goals: p.goals ?? 0,
+            assists: p.assists ?? 0,
+            notes: p.notes || "",
+            events: p.events || [],
+          }))
+        );
+      }
+    }
+  } catch (e) {
+    console.error("Failed to sync normalized tables to Supabase:", e);
+  }
+}
+
+async function saveToSupabase(state) {
+  if (!supabase) return;
+  try {
+    await supabase.from("app_state").upsert(
+      { id: APP_STATE_ROW_ID, data: getPersistedPayload(state), updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+    await syncNormalizedToSupabase(state);
+  } catch (e) {
+    console.error("Failed to save to Supabase:", e);
   }
 }
 
@@ -995,14 +1084,21 @@ export default function App() {
   const saveTimeoutRef = useRef(null);
 
   useEffect(() => {
-    const data = loadState();
-    dispatch({ type: "LOAD_SAVED", data: data || initialState });
+    (async () => {
+      let data = null;
+      if (supabase) data = await loadFromSupabase();
+      if (!data) data = loadState();
+      dispatch({ type: "LOAD_SAVED", data: data || initialState });
+    })();
   }, []);
 
   useEffect(() => {
     if (!state.loaded) return;
     clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => saveState(state), 500);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveState(state);
+      saveToSupabase(state);
+    }, 500);
   }, [state]);
 
   useEffect(() => {
