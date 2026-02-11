@@ -263,7 +263,7 @@ function reducer(state, action) {
         ...state,
         currentMatch: match,
         matches: state.matches.map((m) => (m.id === match.id ? match : m)),
-        view: "match-review",
+        view: "match-edit",
       };
     }
     case "ADD_MATCH_PLAYER": {
@@ -912,107 +912,6 @@ function LiveMatch({ state, dispatch }) {
   );
 }
 
-// --- Match Review ---
-
-function MatchReview({ state, dispatch }) {
-  const match = state.currentMatch;
-  const result = match.teamGoals > match.opponentGoals ? "Win" : match.teamGoals < match.opponentGoals ? "Loss" : "Draw";
-  const sorted = [...match.players].sort((a, b) => b.seconds - a.seconds);
-  const playersWithNotes = sorted.filter((p) => p.notes);
-  const totalMatchMins = Math.round(match.matchSeconds / 60);
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "SET_VIEW", view: "dashboard" })}><Icon name="back" /></Btn>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-gray-900">vs {match.opponent}</h1>
-          <p className="text-xs text-gray-500">{formatDate(match.date)} · {match.venue === "home" ? "Home" : "Away"}</p>
-        </div>
-        <Btn variant="default" size="sm" onClick={() => exportMatchCSV(match)}>Export</Btn>
-      </div>
-      <div className="bg-gray-900 rounded-2xl p-5 text-white text-center">
-        <div className={`text-sm font-semibold mb-2 ${result === "Win" ? "text-emerald-400" : result === "Loss" ? "text-red-400" : "text-amber-400"}`}>{result}</div>
-        <div className="text-4xl font-bold">{match.teamGoals} – {match.opponentGoals}</div>
-        <div className="text-sm opacity-50 mt-2 font-mono">{formatTime(match.matchSeconds)} match time</div>
-        {match.tag && <div className="mt-2"><span className="px-2 py-0.5 bg-white/10 rounded-full text-xs font-medium">{match.tag}</span></div>}
-      </div>
-      {match.description && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <h3 className="text-xs font-medium text-gray-500 mb-1">Description</h3>
-          <p className="text-sm text-gray-700">{match.description}</p>
-        </div>
-      )}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Player Stats</h2></div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-              <th className="p-3">Player</th><th className="p-3 text-center">On</th><th className="p-3 text-center">Off</th><th className="p-3 text-center">⚽</th><th className="p-3 text-center">🅰️</th>
-            </tr></thead>
-            <tbody>{sorted.map((p) => {
-              const minsOn = Math.round(p.seconds / 60);
-              const minsOff = Math.max(0, totalMatchMins - minsOn);
-              return (
-                <tr key={p.id} className="border-b border-gray-50">
-                  <td className="p-3 font-medium">{p.name}</td>
-                  <td className="p-3 text-center font-mono text-emerald-600">{minsOn}′</td>
-                  <td className="p-3 text-center font-mono text-gray-400">{minsOff}′</td>
-                  <td className="p-3 text-center">{p.goals}</td>
-                  <td className="p-3 text-center">{p.assists}</td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Player Timeline</h2></div>
-        <div className="divide-y divide-gray-100">
-          {sorted.filter((p) => p.events.length > 0).map((p) => {
-            const stints = getPlayerStints(p, match.matchSeconds);
-            return (
-              <div key={p.id} className="p-4">
-                <div className="font-medium text-sm text-gray-900 mb-2">{p.name}</div>
-                <div className="relative h-5 bg-gray-100 rounded-full overflow-hidden">
-                  {stints.map((s, i) => {
-                    const left = match.matchSeconds > 0 ? (s.on / match.matchSeconds) * 100 : 0;
-                    const width = match.matchSeconds > 0 ? ((s.off - s.on) / match.matchSeconds) * 100 : 0;
-                    return <div key={i} className="absolute top-0 h-full bg-blue-400 rounded-full" style={{ left: `${left}%`, width: `${Math.max(width, 1)}%` }} />;
-                  })}
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {stints.map((s, i) => (
-                    <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-mono">{formatTime(s.on)} → {formatTime(s.off)}</span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {playersWithNotes.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900 flex items-center gap-2"><Icon name="note" size={16} />Player Notes</h2></div>
-          <div className="divide-y divide-gray-100">
-            {playersWithNotes.map((p) => (
-              <div key={p.id} className="p-4">
-                <div className="font-medium text-sm text-gray-900 mb-1">{p.name}</div>
-                <p className="text-sm text-gray-600">{p.notes}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="pt-2">
-        <Btn variant="default" size="md" className="w-full" onClick={() => dispatch({ type: "SET_VIEW", view: "match-edit" })}>
-          <Icon name="edit" size={16} /> Edit Match
-        </Btn>
-      </div>
-    </div>
-  );
-}
-
 // --- Match Edit (non-live only; no timers) ---
 
 const DRAWER_DURATION_MS = 300;
@@ -1054,7 +953,8 @@ function MatchEdit({ state, dispatch }) {
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Btn variant="ghost" size="sm" onClick={goBack}><Icon name="back" /></Btn>
-        <h1 className="text-xl font-bold text-gray-900">Edit Match</h1>
+        <h1 className="text-xl font-bold text-gray-900 flex-1">Edit Match</h1>
+        <Btn variant="default" size="sm" onClick={() => exportMatchCSV(match)}>Export</Btn>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
@@ -1260,21 +1160,19 @@ function MatchEdit({ state, dispatch }) {
         </>
       )}
 
-      <Btn variant="primary" size="lg" className="w-full" onClick={goBack}>Done</Btn>
-
-      <div className="pt-2">
-        {!confirmDelete ? (
-          <Btn variant="danger" size="lg" className="w-full" onClick={() => setConfirmDelete(true)}>Delete Match</Btn>
-        ) : (
-          <div className="bg-red-50 rounded-2xl border border-red-200 p-4 space-y-3">
-            <p className="text-sm text-red-800 font-medium text-center">Are you sure you want to delete this match? This cannot be undone.</p>
-            <div className="flex gap-2">
-              <Btn variant="default" size="md" className="flex-1" onClick={() => setConfirmDelete(false)}>Cancel</Btn>
-              <Btn variant="danger" size="md" className="flex-1" onClick={() => dispatch({ type: "DELETE_MATCH" })}>Delete Match</Btn>
-            </div>
-          </div>
-        )}
+      <div className="flex gap-2">
+        <Btn variant="primary" size="lg" className="flex-1" onClick={goBack}>Done</Btn>
+        <Btn variant="danger" size="lg" className="flex-1" onClick={() => setConfirmDelete(true)}>Delete Match</Btn>
       </div>
+      {confirmDelete && (
+        <div className="bg-red-50 rounded-2xl border border-red-200 p-4 space-y-3">
+          <p className="text-sm text-red-800 font-medium text-center">Are you sure you want to delete this match? This cannot be undone.</p>
+          <div className="flex gap-2">
+            <Btn variant="default" size="md" className="flex-1" onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+            <Btn variant="danger" size="md" className="flex-1" onClick={() => dispatch({ type: "DELETE_MATCH" })}>Delete Match</Btn>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1323,26 +1221,62 @@ export default function App() {
     );
   }
 
+  const NavButton = ({ item, live }) => (
+    <button
+      type="button"
+      onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
+      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition w-full text-left font-medium ${
+        state.view === item.view ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+      }`}
+    >
+      {live ? (
+        <span className="relative shrink-0"><Icon name="clock" size={22} /><span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" /></span>
+      ) : (
+        <Icon name={item.icon} size={22} className="shrink-0" />
+      )}
+      <span>{item.label}</span>
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-lg mx-auto px-4 py-6 pb-24">
-        {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} />}
-        {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} />}
-        {state.view === "squad" && <SquadView state={state} dispatch={dispatch} />}
-        {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} />}
-        {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} />}
-        {state.view === "match-review" && <MatchReview state={state} dispatch={dispatch} />}
-        {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} />}
-      </div>
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex justify-around">
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Side menu: tablet and desktop */}
+      <aside className="hidden md:flex md:flex-col md:w-56 md:fixed md:inset-y-0 md:left-0 bg-white border-r border-gray-200 z-30">
+        <div className="p-4 border-b border-gray-100">
+          <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>
+        </div>
+        <nav className="p-3 flex flex-col gap-1">
+          {navItems.map((item) => (
+            <NavButton key={item.view} item={item} live={false} />
+          ))}
+          {state.currentMatch?.status === "live" && (
+            <NavButton item={{ view: "match", icon: "clock", label: "Live" }} live />
+          )}
+        </nav>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 min-h-screen md:pl-56">
+        <div className="max-w-lg mx-auto px-4 py-6 pb-24 md:pb-8 md:max-w-2xl">
+          {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} />}
+          {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} />}
+          {state.view === "squad" && <SquadView state={state} dispatch={dispatch} />}
+          {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} />}
+          {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} />}
+          {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} />}
+        </div>
+      </main>
+
+      {/* Bottom nav: mobile only */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex justify-around z-20">
         {navItems.map((item) => (
-          <button key={item.view} onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
+          <button key={item.view} type="button" onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
             className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition ${state.view === item.view ? "text-blue-600" : "text-gray-400"}`}>
             <Icon name={item.icon} size={20} /><span className="text-xs font-medium">{item.label}</span>
           </button>
         ))}
         {state.currentMatch?.status === "live" && (
-          <button onClick={() => dispatch({ type: "SET_VIEW", view: "match" })}
+          <button type="button" onClick={() => dispatch({ type: "SET_VIEW", view: "match" })}
             className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition ${state.view === "match" ? "text-blue-600" : "text-gray-400"}`}>
             <span className="relative"><Icon name="clock" size={20} /><span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" /></span>
             <span className="text-xs font-medium">Live</span>
