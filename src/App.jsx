@@ -320,6 +320,19 @@ function reducer(state, action) {
         view: "dashboard",
       };
     }
+    case "UPDATE_PLAYER_STATS_BULK": {
+      const goalsDiff = action.goals - state.currentMatch.players.find((p) => p.id === action.playerId).goals;
+      const match = {
+        ...state.currentMatch,
+        players: state.currentMatch.players.map((p) =>
+          p.id === action.playerId
+            ? { ...p, seconds: action.seconds, goals: action.goals, assists: action.assists, notes: action.notes }
+            : p
+        ),
+        teamGoals: Math.max(0, state.currentMatch.teamGoals + goalsDiff),
+      };
+      return { ...state, currentMatch: match, matches: state.matches.map((m) => (m.id === match.id ? match : m)) };
+    }
     default:
       return state;
   }
@@ -382,6 +395,35 @@ const Btn = ({ children, onClick, variant = "default", size = "md", className = 
     <button onClick={onClick} disabled={disabled} className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}>
       {children}
     </button>
+  );
+};
+
+// --- Modal ---
+
+const Modal = ({ isOpen, onClose, title, message, onConfirm, confirmText = "Confirm", confirmVariant = "danger", children }) => {
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/50 transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full pointer-events-auto transform transition-all">
+          <div className="p-5 space-y-4">
+            {title && <h3 className="text-lg font-bold text-gray-900">{title}</h3>}
+            {message && <p className="text-sm text-gray-600">{message}</p>}
+            {children}
+            <div className="flex gap-2 pt-2">
+              <Btn variant="default" size="md" className="flex-1" onClick={onClose}>
+                Cancel
+              </Btn>
+              <Btn variant={confirmVariant} size="md" className="flex-1" onClick={onConfirm}>
+                {confirmText}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 };
 
@@ -468,6 +510,8 @@ function SquadView({ state, dispatch }) {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editVal, setEditVal] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleVal, setTitleVal] = useState(state.teamTitle);
   const startEditing = (p) => { setEditingId(p.id); setEditVal(p.name); };
   const saveEdit = () => { if (editVal.trim()) dispatch({ type: "RENAME_SQUAD_PLAYER", playerId: editingId, name: editVal.trim() }); setEditingId(null); };
   const addPlayer = () => { if (newName.trim()) { dispatch({ type: "ADD_SQUAD_PLAYER", name: newName.trim() }); setNewName(""); } };
@@ -479,7 +523,17 @@ function SquadView({ state, dispatch }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Squad</h1>
+        <div className="flex items-center gap-2">
+          {editingTitle ? (
+            <input value={titleVal} onChange={(e) => setTitleVal(e.target.value)} autoFocus
+              onBlur={() => { if (titleVal.trim()) dispatch({ type: "SET_TEAM_TITLE", title: titleVal.trim() }); setEditingTitle(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { if (titleVal.trim()) dispatch({ type: "SET_TEAM_TITLE", title: titleVal.trim() }); setEditingTitle(false); } }}
+              className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 outline-none w-48" />
+          ) : (
+            <h1 className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition" onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }}>{state.teamTitle}</h1>
+          )}
+          {!editingTitle && <button onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }} className="text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>}
+        </div>
         <span className="text-sm text-gray-500 font-medium">{state.squad.length} players</span>
       </div>
       <div className="bg-white rounded-2xl border border-gray-200 p-4">
@@ -525,8 +579,8 @@ function SquadView({ state, dispatch }) {
 // --- Dashboard ---
 
 function Dashboard({ state, dispatch }) {
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleVal, setTitleVal] = useState(state.teamTitle);
+  const [sortKey, setSortKey] = useState("totalMinutes");
+  const [sortDir, setSortDir] = useState("desc");
   const matches = [...state.matches].reverse();
   const completed = matches.filter((m) => m.status === "completed");
   const totalMatches = completed.length;
@@ -545,22 +599,29 @@ function Dashboard({ state, dispatch }) {
       allPlayers[p.name].assists += p.assists;
     });
   });
-  const playerStats = Object.values(allPlayers).sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const playerStats = Object.values(allPlayers).sort((a, b) => {
+    let valA = a[sortKey];
+    let valB = b[sortKey];
+    if (sortKey === "name") {
+      return sortDir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    }
+    return sortDir === "asc" ? valA - valB : valB - valA;
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          {editingTitle ? (
-            <input value={titleVal} onChange={(e) => setTitleVal(e.target.value)} autoFocus
-              onBlur={() => { if (titleVal.trim()) dispatch({ type: "SET_TEAM_TITLE", title: titleVal.trim() }); setEditingTitle(false); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { if (titleVal.trim()) dispatch({ type: "SET_TEAM_TITLE", title: titleVal.trim() }); setEditingTitle(false); } }}
-              className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 outline-none w-48" />
-          ) : (
-            <h1 className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition" onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }}>{state.teamTitle}</h1>
-          )}
-          {!editingTitle && <button onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }} className="text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>}
-        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="flex items-center gap-2">
           {matches.length > 0 && <Btn variant="default" onClick={() => exportDashboardCSV(state)}>Export</Btn>}
           <Btn variant="primary" onClick={() => dispatch({ type: "SET_VIEW", view: "new-match" })}>New Match</Btn>
@@ -598,10 +659,39 @@ function Dashboard({ state, dispatch }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-                <th className="p-3">Player</th><th className="p-3 text-center">MP</th><th className="p-3 text-center">Mins</th><th className="p-3 text-center">⚽</th><th className="p-3 text-center">🅰️</th>
+                <th className="p-3 cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("name")}>
+                  <div className="flex items-center gap-1">
+                    Player
+                    {sortKey === "name" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                  </div>
+                </th>
+                <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("matches")}>
+                  <div className="flex items-center justify-center gap-1">
+                    MP
+                    {sortKey === "matches" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                  </div>
+                </th>
+                <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("totalMinutes")}>
+                  <div className="flex items-center justify-center gap-1">
+                    Mins
+                    {sortKey === "totalMinutes" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                  </div>
+                </th>
+                <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("goals")}>
+                  <div className="flex items-center justify-center gap-1">
+                    ⚽
+                    {sortKey === "goals" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                  </div>
+                </th>
+                <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("assists")}>
+                  <div className="flex items-center justify-center gap-1">
+                    🅰️
+                    {sortKey === "assists" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                  </div>
+                </th>
               </tr></thead>
-              <tbody>{playerStats.map((p) => (
-                <tr key={p.name} className="border-b border-gray-50 hover:bg-gray-50">
+              <tbody>{playerStats.map((p, index) => (
+                <tr key={p.name} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'} hover:bg-blue-50`}>
                   <td className="p-3 font-medium">{p.name}</td>
                   <td className="p-3 text-center">{p.matches}</td>
                   <td className="p-3 text-center">{p.totalMinutes}</td>
@@ -896,17 +986,19 @@ function LiveMatch({ state, dispatch }) {
         </div>
       )}
       <div className="pt-2">
-        {!confirmEnd ? (
-          <Btn variant="danger" size="lg" className="w-full" onClick={() => setConfirmEnd(true)}>End Match</Btn>
-        ) : (
-          <div className="bg-red-50 rounded-2xl border border-red-200 p-4 space-y-3">
-            <p className="text-sm text-red-800 font-medium text-center">Are you sure you want to end this match?</p>
-            <div className="flex gap-2">
-              <Btn variant="default" size="md" className="flex-1" onClick={() => setConfirmEnd(false)}>Cancel</Btn>
-              <Btn variant="danger" size="md" className="flex-1" onClick={() => dispatch({ type: "END_MATCH" })}>End Match</Btn>
-            </div>
-          </div>
-        )}
+        <Btn variant="danger" size="lg" className="w-full" onClick={() => setConfirmEnd(true)}>End Match</Btn>
+        <Modal
+          isOpen={confirmEnd}
+          onClose={() => setConfirmEnd(false)}
+          title="End Match"
+          message="Are you sure you want to end this match? All running timers will be stopped and the match will be marked as completed."
+          onConfirm={() => {
+            dispatch({ type: "END_MATCH" });
+            setConfirmEnd(false);
+          }}
+          confirmText="End Match"
+          confirmVariant="danger"
+        />
       </div>
     </div>
   );
@@ -919,13 +1011,39 @@ const DRAWER_DURATION_MS = 300;
 function MatchEdit({ state, dispatch }) {
   const match = state.currentMatch;
   const isCompleted = match.status === "completed";
-  const [expanded, setExpanded] = useState(null);
   const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
   const [drawerEntering, setDrawerEntering] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sortKey, setSortKey] = useState("seconds");
+  const [sortDir, setSortDir] = useState("desc");
+  const [editDrawerOpen, setEditDrawerOpen] = useState(false);
+  const [editDrawerEntering, setEditDrawerEntering] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState(null);
+  const [editMinsOn, setEditMinsOn] = useState(0);
+  const [editGoals, setEditGoals] = useState(0);
+  const [editAssists, setEditAssists] = useState(0);
+  const [editNotes, setEditNotes] = useState("");
   const goBack = () => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" });
-  const sorted = isCompleted ? [...match.players].sort((a, b) => b.seconds - a.seconds) : [];
   const totalMatchMins = isCompleted ? Math.round(match.matchSeconds / 60) : 0;
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const sorted = isCompleted ? [...match.players].sort((a, b) => {
+    let valA, valB;
+    if (sortKey === "name") {
+      return sortDir === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+    }
+    valA = a[sortKey];
+    valB = b[sortKey];
+    return sortDir === "asc" ? valA - valB : valB - valA;
+  }) : [];
   const playersWithNotes = sorted.filter((p) => p.notes?.trim());
 
   useEffect(() => {
@@ -947,7 +1065,54 @@ function MatchEdit({ state, dispatch }) {
     }
   }, [drawerEntering, timelineDrawerOpen]);
 
+  useEffect(() => {
+    if (editDrawerOpen) {
+      setEditDrawerEntering(false);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setEditDrawerEntering(true));
+      });
+      return () => cancelAnimationFrame(id);
+    } else {
+      setEditDrawerEntering(false);
+    }
+  }, [editDrawerOpen]);
+
+  useEffect(() => {
+    if (!editDrawerEntering && editDrawerOpen) {
+      const id = setTimeout(() => setEditDrawerOpen(false), DRAWER_DURATION_MS);
+      return () => clearTimeout(id);
+    }
+  }, [editDrawerEntering, editDrawerOpen]);
+
   const closeTimelineDrawer = () => setDrawerEntering(false);
+
+  const openEditDrawer = (player) => {
+    setEditingPlayer(player);
+    setEditMinsOn(Math.round(player.seconds / 60));
+    setEditGoals(player.goals);
+    setEditAssists(player.assists);
+    setEditNotes(player.notes || "");
+    setEditDrawerOpen(true);
+  };
+
+  const closeEditDrawer = () => setEditDrawerEntering(false);
+
+  const savePlayerStats = () => {
+    if (!editingPlayer) return;
+
+    const newSeconds = editMinsOn * 60;
+
+    dispatch({
+      type: "UPDATE_PLAYER_STATS_BULK",
+      playerId: editingPlayer.id,
+      seconds: newSeconds,
+      goals: editGoals,
+      assists: editAssists,
+      notes: editNotes,
+    });
+
+    closeEditDrawer();
+  };
 
   return (
     <div className="space-y-5">
@@ -1024,65 +1189,41 @@ function MatchEdit({ state, dispatch }) {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Player stats</h2></div>
-            <div className="divide-y divide-gray-100">
-              {match.players.map((p) => (
-                <div key={p.id} className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-gray-900 truncate">{p.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">⚽ {p.goals}  🅰️ {p.assists}{p.notes?.trim() ? "  · Note" : ""}</div>
-                    </div>
-                    <button onClick={() => setExpanded(expanded === p.id ? null : p.id)}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 ${expanded === p.id ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                      <Icon name={expanded === p.id ? "up" : "down"} size={18} />
-                    </button>
-                  </div>
-                  {expanded === p.id && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">⚽ Goals</label>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "goals", delta: -1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">−</button>
-                            <span className="w-8 text-center font-bold">{p.goals}</span>
-                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "goals", delta: 1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">+</button>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">🅰️ Assists</label>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "assists", delta: -1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">−</button>
-                            <span className="w-8 text-center font-bold">{p.assists}</span>
-                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: "assists", delta: 1 })} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-sm">+</button>
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-500 block mb-1">Notes</label>
-                        <textarea value={p.notes || ""} onChange={(e) => dispatch({ type: "UPDATE_PLAYER_NOTES", playerId: p.id, notes: e.target.value })}
-                          placeholder="Optional notes..."
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-400 outline-none text-sm resize-none" rows={2} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <div className="p-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">Player Stats</h2></div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-                  <th className="p-3">Player</th><th className="p-3 text-center">On</th><th className="p-3 text-center">Off</th><th className="p-3 text-center">⚽</th><th className="p-3 text-center">🅰️</th>
+                  <th className="p-3 cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("name")}>
+                    <div className="flex items-center gap-1">
+                      Player
+                      {sortKey === "name" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                    </div>
+                  </th>
+                  <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("seconds")}>
+                    <div className="flex items-center justify-center gap-1">
+                      On
+                      {sortKey === "seconds" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                    </div>
+                  </th>
+                  <th className="p-3 text-center">Off</th>
+                  <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("goals")}>
+                    <div className="flex items-center justify-center gap-1">
+                      ⚽
+                      {sortKey === "goals" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                    </div>
+                  </th>
+                  <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("assists")}>
+                    <div className="flex items-center justify-center gap-1">
+                      🅰️
+                      {sortKey === "assists" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                    </div>
+                  </th>
                 </tr></thead>
-                <tbody>{sorted.map((p) => {
+                <tbody>{sorted.map((p, index) => {
                   const minsOn = Math.round(p.seconds / 60);
                   const minsOff = Math.max(0, totalMatchMins - minsOn);
                   return (
-                    <tr key={p.id} className="border-b border-gray-50">
+                    <tr key={p.id} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'} hover:bg-blue-100 cursor-pointer transition`} onClick={() => openEditDrawer(p)}>
                       <td className="p-3 font-medium">{p.name}</td>
                       <td className="p-3 text-center font-mono text-emerald-600">{minsOn}′</td>
                       <td className="p-3 text-center font-mono text-gray-400">{minsOff}′</td>
@@ -1094,6 +1235,94 @@ function MatchEdit({ state, dispatch }) {
               </table>
             </div>
           </div>
+
+          {editDrawerOpen && (
+            <>
+              <div
+                className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ease-out ${editDrawerEntering ? "opacity-100" : "opacity-0"}`}
+                onClick={closeEditDrawer}
+                aria-hidden
+              />
+              <div
+                className={`fixed bottom-0 left-0 right-0 md:pl-56 z-50 max-h-[85vh] flex flex-col bg-white rounded-t-2xl shadow-xl transition-transform duration-300 ease-out ${editDrawerEntering ? "translate-y-0" : "translate-y-full"}`}
+              >
+                <div className="max-w-2xl mx-auto w-full flex flex-col max-h-[85vh]">
+                <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
+                  <h2 className="font-semibold text-gray-900">Edit Player Stats</h2>
+                  <button type="button" onClick={closeEditDrawer} className="w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600">
+                    <Icon name="x" size={18} />
+                  </button>
+                </div>
+                <div className="overflow-y-auto p-4 space-y-4">
+                  {editingPlayer && (
+                    <>
+                      <div>
+                        <h3 className="font-medium text-lg text-gray-900 mb-4">{editingPlayer.name}</h3>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Minutes On Field</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={totalMatchMins}
+                          value={editMinsOn}
+                          onChange={(e) => setEditMinsOn(Math.max(0, Math.min(totalMatchMins, parseInt(e.target.value, 10) || 0)))}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Max: {totalMatchMins} minutes</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">⚽ Goals</label>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setEditGoals(Math.max(0, editGoals - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editGoals}
+                              onChange={(e) => setEditGoals(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                              className="flex-1 px-4 py-2.5 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-lg"
+                            />
+                            <button onClick={() => setEditGoals(editGoals + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">🅰️ Assists</label>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setEditAssists(Math.max(0, editAssists - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editAssists}
+                              onChange={(e) => setEditAssists(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                              className="flex-1 px-4 py-2.5 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-lg"
+                            />
+                            <button onClick={() => setEditAssists(editAssists + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          placeholder="Add notes for this player..."
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-sm resize-none"
+                          rows={3}
+                        />
+                      </div>
+                      <div className="pt-2">
+                        <Btn variant="primary" size="lg" className="w-full" onClick={savePlayerStats}>
+                          Save Changes
+                        </Btn>
+                      </div>
+                    </>
+                  )}
+                </div>
+                </div>
+              </div>
+            </>
+          )}
 
           <div>
             <button type="button" onClick={() => setTimelineDrawerOpen(true)}
@@ -1109,8 +1338,9 @@ function MatchEdit({ state, dispatch }) {
                   aria-hidden
                 />
                 <div
-                  className={`fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] flex flex-col bg-white rounded-t-2xl shadow-xl transition-transform duration-300 ease-out ${drawerEntering ? "translate-y-0" : "translate-y-full"}`}
+                  className={`fixed bottom-0 left-0 right-0 md:pl-56 z-50 max-h-[85vh] flex flex-col bg-white rounded-t-2xl shadow-xl transition-transform duration-300 ease-out ${drawerEntering ? "translate-y-0" : "translate-y-full"}`}
                 >
+                  <div className="max-w-2xl mx-auto w-full flex flex-col max-h-[85vh]">
                   <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
                     <h2 className="font-semibold text-gray-900">Player Timeline</h2>
                     <button type="button" onClick={closeTimelineDrawer} className="w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600">
@@ -1139,6 +1369,7 @@ function MatchEdit({ state, dispatch }) {
                       );
                     })}
                   </div>
+                  </div>
                 </div>
               </>
             )}
@@ -1161,18 +1392,21 @@ function MatchEdit({ state, dispatch }) {
       )}
 
       <div className="flex gap-2">
-        <Btn variant="primary" size="lg" className="flex-1" onClick={goBack}>Done</Btn>
         <Btn variant="danger" size="lg" className="flex-1" onClick={() => setConfirmDelete(true)}>Delete Match</Btn>
+        <Btn variant="primary" size="lg" className="flex-1" onClick={goBack}>Done</Btn>
       </div>
-      {confirmDelete && (
-        <div className="bg-red-50 rounded-2xl border border-red-200 p-4 space-y-3">
-          <p className="text-sm text-red-800 font-medium text-center">Are you sure you want to delete this match? This cannot be undone.</p>
-          <div className="flex gap-2">
-            <Btn variant="default" size="md" className="flex-1" onClick={() => setConfirmDelete(false)}>Cancel</Btn>
-            <Btn variant="danger" size="md" className="flex-1" onClick={() => dispatch({ type: "DELETE_MATCH" })}>Delete Match</Btn>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete Match"
+        message="Are you sure you want to delete this match? This action cannot be undone."
+        onConfirm={() => {
+          dispatch({ type: "DELETE_MATCH" });
+          setConfirmDelete(false);
+        }}
+        confirmText="Delete Match"
+        confirmVariant="danger"
+      />
     </div>
   );
 }
