@@ -691,7 +691,7 @@ function Dashboard({ state, dispatch }) {
                 </th>
               </tr></thead>
               <tbody>{playerStats.map((p, index) => (
-                <tr key={p.name} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'} hover:bg-blue-50`}>
+                <tr key={p.name} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/50' : 'bg-white'} hover:bg-blue-50`}>
                   <td className="p-3 font-medium">{p.name}</td>
                   <td className="p-3 text-center">{p.matches}</td>
                   <td className="p-3 text-center">{p.totalMinutes}</td>
@@ -1223,7 +1223,7 @@ function MatchEdit({ state, dispatch }) {
                   const minsOn = Math.round(p.seconds / 60);
                   const minsOff = Math.max(0, totalMatchMins - minsOn);
                   return (
-                    <tr key={p.id} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/30' : 'bg-white'} hover:bg-blue-100 cursor-pointer transition`} onClick={() => openEditDrawer(p)}>
+                    <tr key={p.id} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/50' : 'bg-white'} hover:bg-blue-100 cursor-pointer transition`} onClick={() => openEditDrawer(p)}>
                       <td className="p-3 font-medium">{p.name}</td>
                       <td className="p-3 text-center font-mono text-emerald-600">{minsOn}′</td>
                       <td className="p-3 text-center font-mono text-gray-400">{minsOff}′</td>
