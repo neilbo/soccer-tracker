@@ -625,7 +625,10 @@ function Dashboard({ state, dispatch }) {
 function NewMatch({ state, dispatch }) {
   const [opponent, setOpponent] = useState("");
   const [venue, setVenue] = useState("home");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [description, setDescription] = useState("");
   const [tag, setTag] = useState("");
   const [touched, setTouched] = useState(false);
