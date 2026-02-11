@@ -61,6 +61,68 @@ async function loadFromSupabase() {
   }
 }
 
+async function syncNormalizedToSupabase(state) {
+  if (!supabase) return;
+  const teamId = "default";
+  try {
+    await supabase.from("teams").upsert(
+      { id: teamId, title: state.teamTitle || "", updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+
+    await supabase.from("players").delete().eq("team_id", teamId);
+    if (state.squad?.length) {
+      await supabase.from("players").insert(
+        state.squad.map((p, i) => ({
+          id: p.id,
+          team_id: teamId,
+          name: p.name,
+          sort_order: i,
+        }))
+      );
+    }
+
+    for (const m of state.matches || []) {
+      await supabase.from("matches").upsert(
+        {
+          id: m.id,
+          team_id: teamId,
+          opponent: m.opponent || "",
+          venue: m.venue || "home",
+          date: m.date || "",
+          description: m.description || "",
+          tag: m.tag || "",
+          status: m.status || "setup",
+          team_goals: m.teamGoals ?? 0,
+          opponent_goals: m.opponentGoals ?? 0,
+          match_seconds: m.matchSeconds ?? 0,
+          match_running: !!m.matchRunning,
+        },
+        { onConflict: "id" }
+      );
+
+      await supabase.from("match_players").delete().eq("match_id", m.id);
+      if (m.players?.length) {
+        await supabase.from("match_players").insert(
+          m.players.map((p) => ({
+            match_id: m.id,
+            player_id: p.id,
+            player_name: p.name || "",
+            seconds: p.seconds ?? 0,
+            starting: !!p.starting,
+            goals: p.goals ?? 0,
+            assists: p.assists ?? 0,
+            notes: p.notes || "",
+            events: p.events || [],
+          }))
+        );
+      }
+    }
+  } catch (e) {
+    console.error("Failed to sync normalized tables to Supabase:", e);
+  }
+}
+
 async function saveToSupabase(state) {
   if (!supabase) return;
   try {
@@ -68,6 +130,7 @@ async function saveToSupabase(state) {
       { id: APP_STATE_ROW_ID, data: getPersistedPayload(state), updated_at: new Date().toISOString() },
       { onConflict: "id" }
     );
+    await syncNormalizedToSupabase(state);
   } catch (e) {
     console.error("Failed to save to Supabase:", e);
   }
