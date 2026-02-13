@@ -58,16 +58,6 @@ export function SystemStatsView() {
       color: 'blue',
     },
     {
-      label: 'Super Admins',
-      value: stats?.super_admins || 0,
-      icon: (
-        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        </svg>
-      ),
-      color: 'purple',
-    },
-    {
       label: 'Total Teams',
       value: stats?.total_teams || 0,
       icon: (
@@ -78,7 +68,7 @@ export function SystemStatsView() {
       color: 'green',
     },
     {
-      label: 'Total Organizations',
+      label: 'Total Clubs',
       value: stats?.total_clubs || 0,
       icon: (
         <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -119,34 +109,22 @@ export function SystemStatsView() {
       ),
       color: 'gray',
     },
-    {
-      label: 'Pending Invitations',
-      value: (stats?.pending_team_invitations || 0) + (stats?.pending_club_invitations || 0),
-      icon: (
-        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-        </svg>
-      ),
-      color: 'yellow',
-    },
   ];
 
   const colorClasses = {
     blue: 'bg-blue-100 text-blue-700',
-    purple: 'bg-purple-100 text-purple-700',
     green: 'bg-green-100 text-green-700',
     orange: 'bg-orange-100 text-orange-700',
     indigo: 'bg-indigo-100 text-indigo-700',
     emerald: 'bg-emerald-100 text-emerald-700',
     gray: 'bg-gray-100 text-gray-700',
-    yellow: 'bg-yellow-100 text-yellow-700',
   };
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">System Overview</h2>
+          <h2 className="text-xl font-bold text-gray-900">Dashboard</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             Last updated: {stats?.last_updated ? new Date(stats.last_updated).toLocaleString() : 'N/A'}
           </p>
@@ -163,7 +141,7 @@ export function SystemStatsView() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {statCards.map((card, index) => (
           <div
             key={index}
@@ -180,25 +158,6 @@ export function SystemStatsView() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Additional Stats Details */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">Invitation Breakdown</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-4 bg-gray-50 rounded-xl">
-            <p className="text-xs text-gray-600 font-medium uppercase">Total Invitations</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{stats?.total_invitations || 0}</p>
-          </div>
-          <div className="p-4 bg-blue-50 rounded-xl">
-            <p className="text-xs text-blue-600 font-medium uppercase">Team Invitations</p>
-            <p className="text-2xl font-bold text-blue-700 mt-1">{stats?.pending_team_invitations || 0}</p>
-          </div>
-          <div className="p-4 bg-purple-50 rounded-xl">
-            <p className="text-xs text-purple-600 font-medium uppercase">Club Invitations</p>
-            <p className="text-2xl font-bold text-purple-700 mt-1">{stats?.pending_club_invitations || 0}</p>
-          </div>
-        </div>
       </div>
     </div>
   );

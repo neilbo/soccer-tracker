@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth, usePermissions } from '../../hooks/useAuth';
-import { InvitationManager } from './InvitationManager';
 
 export function TeamSelector({ onTeamCreated }) {
   const { currentTeam, teams, selectTeam, createNewTeam, userClubs } = useAuth();
   const { canEdit, canCreateTeam } = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showInvitations, setShowInvitations] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [selectedClubId, setSelectedClubId] = useState('');
   const [creating, setCreating] = useState(false);
@@ -213,20 +211,6 @@ export function TeamSelector({ onTeamCreated }) {
 
               {/* Action Buttons */}
               <div className="border-t border-gray-100 p-2 space-y-1">
-                {canEdit && (
-                  <button
-                    onClick={() => {
-                      setShowInvitations(true);
-                      setIsOpen(false);
-                    }}
-                    className="w-full px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-2"
-                  >
-                    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 11a4 4 0 100-8 4 4 0 000 8zM16 11h6M19 8v6" />
-                    </svg>
-                    Invite Members
-                  </button>
-                )}
                 {canCreateTeam && (
                   <button
                     onClick={() => setShowCreateForm(true)}
@@ -313,14 +297,6 @@ export function TeamSelector({ onTeamCreated }) {
             </>
           )}
         </div>
-      )}
-
-      {/* Invitation Manager Modal */}
-      {showInvitations && currentTeam && (
-        <InvitationManager
-          teamId={currentTeam.team_id}
-          onClose={() => setShowInvitations(false)}
-        />
       )}
     </div>
   );

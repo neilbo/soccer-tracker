@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getAllInvitations } from '../../supabaseClient';
+import {
+  getAllInvitations,
+  getAllTeams,
+  getAllClubs,
+  createInvitation,
+  createClubInvitation,
+} from '../../supabaseClient';
 
 export function InvitationManagementView() {
   const [invitations, setInvitations] = useState([]);
@@ -10,8 +16,20 @@ export function InvitationManagementView() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Send invitation form state
+  const [teams, setTeams] = useState([]);
+  const [clubs, setClubs] = useState([]);
+  const [invitationType, setInvitationType] = useState('team');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('team_staff');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+
   useEffect(() => {
     loadInvitations();
+    loadTeamsAndClubs();
   }, []);
 
   useEffect(() => {
@@ -29,6 +47,73 @@ export function InvitationManagementView() {
       setInvitations(data);
     }
     setLoading(false);
+  }
+
+  async function loadTeamsAndClubs() {
+    const [teamsResult, clubsResult] = await Promise.all([
+      getAllTeams(),
+      getAllClubs()
+    ]);
+
+    if (!teamsResult.error) {
+      setTeams(teamsResult.teams);
+      if (teamsResult.teams.length > 0) {
+        setSelectedTeamId(teamsResult.teams[0].id);
+      }
+    }
+
+    if (!clubsResult.error) {
+      setClubs(clubsResult.clubs);
+      if (clubsResult.clubs.length > 0) {
+        setSelectedClubId(clubsResult.clubs[0].id);
+      }
+    }
+  }
+
+  async function handleSendInvitation(e) {
+    e.preventDefault();
+    setSendError('');
+    setSending(true);
+
+    // Validate email
+    if (!email.trim() || !email.includes('@')) {
+      setSendError('Please enter a valid email address');
+      setSending(false);
+      return;
+    }
+
+    let result;
+    if (invitationType === 'team') {
+      if (!selectedTeamId) {
+        setSendError('Please select a team');
+        setSending(false);
+        return;
+      }
+      result = await createInvitation(selectedTeamId, email.trim().toLowerCase(), role);
+    } else {
+      if (!selectedClubId) {
+        setSendError('Please select an organization');
+        setSending(false);
+        return;
+      }
+      result = await createClubInvitation(selectedClubId, email.trim().toLowerCase(), role);
+    }
+
+    if (result.error) {
+      if (result.error.message?.includes('duplicate')) {
+        setSendError('An invitation has already been sent to this email');
+      } else {
+        setSendError(result.error.message || 'Failed to send invitation');
+      }
+      setSending(false);
+      return;
+    }
+
+    // Success
+    setEmail('');
+    setRole('team_staff');
+    await loadInvitations();
+    setSending(false);
   }
 
   function applyFilters() {
@@ -131,23 +216,128 @@ export function InvitationManagementView() {
         </button>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-600 font-medium uppercase">Total</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
-        </div>
-        <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4">
-          <p className="text-xs text-yellow-700 font-medium uppercase">Pending</p>
-          <p className="text-2xl font-bold text-yellow-700 mt-1">{stats.pending}</p>
-        </div>
-        <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
-          <p className="text-xs text-blue-700 font-medium uppercase">Team</p>
-          <p className="text-2xl font-bold text-blue-700 mt-1">{stats.team}</p>
-        </div>
-        <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-          <p className="text-xs text-purple-700 font-medium uppercase">Club</p>
-          <p className="text-2xl font-bold text-purple-700 mt-1">{stats.club}</p>
+      {/* Send Invitation */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+        <h3 className="font-semibold text-gray-900 mb-4">Send Invitation</h3>
+        <form onSubmit={handleSendInvitation} className="space-y-4">
+          {sendError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200">
+              <p className="text-sm text-red-600">{sendError}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Invitation Type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Invitation Type
+              </label>
+              <select
+                value={invitationType}
+                onChange={(e) => setInvitationType(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition"
+                disabled={sending}
+              >
+                <option value="team">Team Invitation</option>
+                <option value="club">Club/Organization Invitation</option>
+              </select>
+            </div>
+
+            {/* Team or Club Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {invitationType === 'team' ? 'Select Team' : 'Select Organization'}
+              </label>
+              {invitationType === 'team' ? (
+                <select
+                  value={selectedTeamId}
+                  onChange={(e) => setSelectedTeamId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition"
+                  disabled={sending}
+                >
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.title} {team.club_name ? `(${team.club_name})` : ''}
+                    </option>
+                  ))}
+                  {teams.length === 0 && <option value="">No teams available</option>}
+                </select>
+              ) : (
+                <select
+                  value={selectedClubId}
+                  onChange={(e) => setSelectedClubId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition"
+                  disabled={sending}
+                >
+                  {clubs.map((club) => (
+                    <option key={club.id} value={club.id}>
+                      {club.name}
+                    </option>
+                  ))}
+                  {clubs.length === 0 && <option value="">No organizations available</option>}
+                </select>
+              )}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="user@example.com"
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition"
+                disabled={sending}
+                required
+              />
+            </div>
+
+            {/* Role */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Role
+              </label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition"
+                disabled={sending}
+              >
+                <option value="team_staff">Team Staff (Full Access)</option>
+                <option value="club_admin">Club Admin</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={sending || (invitationType === 'team' && teams.length === 0) || (invitationType === 'club' && clubs.length === 0)}
+            className="w-full px-5 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sending ? 'Sending...' : 'Send Invitation'}
+          </button>
+        </form>
+      </div>
+
+      {/* Invitation Breakdown */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+        <h3 className="font-semibold text-gray-900 mb-4">Invitation Breakdown</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-4 bg-gray-50 rounded-xl">
+            <p className="text-xs text-gray-600 font-medium uppercase">Total Invitations</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+          </div>
+          <div className="p-4 bg-blue-50 rounded-xl">
+            <p className="text-xs text-blue-600 font-medium uppercase">Team Invitations</p>
+            <p className="text-2xl font-bold text-blue-700 mt-1">{stats.team}</p>
+          </div>
+          <div className="p-4 bg-purple-50 rounded-xl">
+            <p className="text-xs text-purple-600 font-medium uppercase">Club Invitations</p>
+            <p className="text-2xl font-bold text-purple-700 mt-1">{stats.club}</p>
+          </div>
         </div>
       </div>
 

@@ -104,7 +104,7 @@ BEGIN
   SELECT
     i.id AS invitation_id,
     'team'::TEXT AS invitation_type,
-    i.email AS invitee_email,
+    i.invitee_email AS invitee_email,
     u.full_name AS inviter_name,
     u.email AS inviter_email,
     i.team_id,
@@ -116,7 +116,7 @@ BEGIN
     i.created_at,
     i.expires_at
   FROM public.invitations i
-  JOIN public.users u ON i.invited_by = u.id
+  JOIN public.users u ON i.inviter_id = u.id
   JOIN public.teams t ON i.team_id = t.id
   LEFT JOIN public.clubs c ON t.club_id = c.id
 
@@ -126,7 +126,7 @@ BEGIN
   SELECT
     ci.id AS invitation_id,
     'club'::TEXT AS invitation_type,
-    ci.email AS invitee_email,
+    ci.invitee_email AS invitee_email,
     u.full_name AS inviter_name,
     u.email AS inviter_email,
     NULL::UUID AS team_id,
@@ -138,7 +138,7 @@ BEGIN
     ci.created_at,
     ci.expires_at
   FROM public.club_invitations ci
-  JOIN public.users u ON ci.invited_by = u.id
+  JOIN public.users u ON ci.inviter_id = u.id
   JOIN public.clubs c ON ci.club_id = c.id
 
   ORDER BY created_at DESC;

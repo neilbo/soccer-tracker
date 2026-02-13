@@ -725,6 +725,39 @@ export async function getAllClubs() {
 }
 
 /**
+ * Get all teams (for super admin or team selection)
+ * @returns {Promise<{teams, error}>}
+ */
+export async function getAllTeams() {
+  if (!supabase) {
+    return { teams: [], error: null };
+  }
+
+  const { data, error } = await supabase
+    .from('teams')
+    .select(`
+      id,
+      title,
+      club_id,
+      clubs (
+        id,
+        name
+      )
+    `)
+    .order('title');
+
+  // Flatten the structure
+  const teams = (data || []).map(team => ({
+    id: team.id,
+    title: team.title,
+    club_id: team.club_id,
+    club_name: team.clubs?.name || null
+  }));
+
+  return { teams, error };
+}
+
+/**
  * Update club name (super admin only)
  * @param {string} clubId - Club UUID
  * @param {string} newName - New club name
