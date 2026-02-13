@@ -1,0 +1,303 @@
+import { useState, useRef, useEffect } from 'react';
+import { useAuth, usePermissions } from '../../hooks/useAuth';
+
+export function TeamSelector({ onTeamCreated }) {
+  const { currentTeam, teams, selectTeam, createNewTeam, userClubs } = useAuth();
+  const { canEdit, canCreateTeam } = usePermissions();
+  const [isOpen, setIsOpen] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+        setShowCreateForm(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  async function handleCreateTeam(e) {
+    e.preventDefault();
+    if (!newTeamName.trim()) return;
+
+    setCreating(true);
+    const clubId = selectedClubId || null;
+
+    const { team, error } = await createNewTeam(newTeamName.trim(), clubId);
+
+    if (error) {
+      console.error('Team creation error:', error);
+      alert('Error creating team: ' + (error.message || JSON.stringify(error)));
+      setCreating(false);
+    } else {
+      setNewTeamName('');
+      setSelectedClubId('');
+      setShowCreateForm(false);
+      setIsOpen(false);
+      setCreating(false);
+
+      // Wait a bit for team to be selected, then call callback
+      if (onTeamCreated) {
+        setTimeout(() => {
+          onTeamCreated();
+        }, 100);
+      }
+    }
+  }
+
+  // Show create team button if no current team
+  if (!currentTeam) {
+    // If user can't create teams, show message instead
+    if (!canCreateTeam) {
+      return (
+        <div className="w-full">
+          <div className="px-5 py-4 rounded-xl bg-gray-50 border border-gray-200 text-center">
+            <p className="text-sm text-gray-600">
+              No team assigned yet. Please contact your administrator.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-full">
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="w-full px-5 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2"
+        >
+          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 4v16m8-8H4" />
+          </svg>
+          Create Your First Team
+        </button>
+
+        {/* Create Team Modal */}
+        {showCreateForm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Create New Team</h3>
+              <form onSubmit={handleCreateTeam} className="space-y-4">
+                <div>
+                  <label htmlFor="newTeamName" className="block text-sm font-medium text-gray-700 mb-1">
+                    Team Name
+                  </label>
+                  <input
+                    id="newTeamName"
+                    type="text"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    placeholder="e.g., U10 Academy"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    disabled={creating}
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                {userClubs.length > 0 && (
+                  <div>
+                    <label htmlFor="clubSelectModal" className="block text-sm font-medium text-gray-700 mb-1">
+                      Organization (optional)
+                    </label>
+                    <select
+                      id="clubSelectModal"
+                      value={selectedClubId}
+                      onChange={(e) => setSelectedClubId(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                      disabled={creating}
+                    >
+                      <option value="">Independent Team</option>
+                      {userClubs.map((club) => (
+                        <option key={club.id} value={club.id}>
+                          {club.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setNewTeamName('');
+                      setSelectedClubId('');
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition"
+                    disabled={creating}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 rounded-xl text-white bg-blue-600 hover:bg-blue-700 font-medium transition disabled:opacity-50"
+                    disabled={creating || !newTeamName.trim()}
+                  >
+                    {creating ? 'Creating...' : 'Create Team'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      {/* Team Selector Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition text-sm font-medium text-gray-700"
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+            <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          <span className="truncate">{currentTeam.team_title}</span>
+        </div>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+          <path d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Dropdown Menu */}
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden z-50">
+          {!showCreateForm ? (
+            <>
+              {/* Team List */}
+              <div className="max-h-64 overflow-y-auto">
+                {teams.map((team) => (
+                  <button
+                    key={team.team_id}
+                    onClick={() => {
+                      selectTeam(team.team_id);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition flex items-center justify-between ${
+                      currentTeam.team_id === team.team_id ? 'bg-blue-50' : ''
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-gray-900 truncate">
+                        {team.team_title}
+                      </div>
+                      {team.club_name && (
+                        <div className="text-xs text-gray-500 truncate">
+                          {team.club_name}
+                        </div>
+                      )}
+                    </div>
+                    {currentTeam.team_id === team.team_id && (
+                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-blue-600">
+                        <path d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="border-t border-gray-100 p-2 space-y-1">
+                {canCreateTeam && (
+                  <button
+                    onClick={() => setShowCreateForm(true)}
+                    className="w-full px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 transition flex items-center justify-center gap-2"
+                  >
+                    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create New Team
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Create Team Form */}
+              <div className="p-4">
+                <h3 className="font-semibold text-gray-900 mb-3">Create New Team</h3>
+                <form onSubmit={handleCreateTeam} className="space-y-3">
+                  <div>
+                    <label htmlFor="teamName" className="block text-xs font-medium text-gray-700 mb-1">
+                      Team Name
+                    </label>
+                    <input
+                      id="teamName"
+                      type="text"
+                      value={newTeamName}
+                      onChange={(e) => setNewTeamName(e.target.value)}
+                      placeholder="Team name (e.g., U10 Academy)"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+                      disabled={creating}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="clubSelect" className="block text-xs font-medium text-gray-700 mb-1">
+                      Club (optional)
+                    </label>
+                    <select
+                      id="clubSelect"
+                      value={selectedClubId}
+                      onChange={(e) => setSelectedClubId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+                      disabled={creating}
+                    >
+                      <option value="">Independent Team</option>
+                      {userClubs.map((club) => (
+                        <option key={club.id} value={club.id}>
+                          {club.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {userClubs.length === 0
+                        ? 'You are not a member of any clubs yet'
+                        : 'Select a club or leave as independent'}
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCreateForm(false);
+                        setNewTeamName('');
+                        setSelectedClubId('');
+                      }}
+                      className="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+                      disabled={creating}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-40"
+                      disabled={creating || !newTeamName.trim()}
+                    >
+                      {creating ? 'Creating...' : 'Create'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

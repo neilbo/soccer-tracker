@@ -1,6 +1,17 @@
 import { useState, useEffect, useReducer, useRef } from "react";
 import "./App.css";
 import { supabase, APP_STATE_ROW_ID } from "./supabaseClient";
+import { useAuth, usePermissions } from "./hooks/useAuth";
+import { LoginScreen } from "./components/Auth/LoginScreen";
+import { SignupScreen } from "./components/Auth/SignupScreen";
+import { TeamSelector } from "./components/Team/TeamSelector";
+import { UserMenu } from "./components/Auth/UserMenu";
+import { PendingInvitations } from "./components/Team/PendingInvitations";
+import { PendingClubInvitations } from "./components/Club/PendingClubInvitations";
+import { OrganizationManager } from "./components/Organization/OrganizationManager";
+import { SystemStatsView } from "./components/Admin/SystemStatsView";
+import { UserManagementView } from "./components/Admin/UserManagementView";
+import { InvitationManagementView } from "./components/Admin/InvitationManagementView";
 
 const DEFAULT_PLAYERS = [
   "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
@@ -63,39 +74,57 @@ function saveState(state) {
   }
 }
 
-async function loadFromSupabase() {
-  if (!supabase) return null;
+async function loadFromSupabase(teamId) {
+  if (!supabase || !teamId) return null;
   try {
-    const { data, error } = await supabase.from("app_state").select("data").eq("id", APP_STATE_ROW_ID).single();
+    const { data, error } = await supabase.from("app_state").select("data").eq("id", teamId).single();
     if (error || !data?.data) return null;
-    return data.data;
+
+    // Fetch the max player ID globally to ensure uniqueness across all teams
+    const { data: maxPlayerData } = await supabase
+      .from("players")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .single();
+
+    const loadedData = data.data;
+    // Set nextPlayerId to max + 1 to avoid conflicts across teams
+    if (maxPlayerData?.id) {
+      loadedData.nextPlayerId = Math.max(loadedData.nextPlayerId || 0, maxPlayerData.id + 1);
+    }
+
+    return loadedData;
   } catch (e) {
     console.error("Failed to load from Supabase:", e);
     return null;
   }
 }
 
-async function syncNormalizedToSupabase(state) {
-  if (!supabase) return;
-  const teamId = "default";
+async function syncNormalizedToSupabase(state, teamId) {
+  if (!supabase || !teamId) return;
   try {
-    await supabase.from("teams").upsert(
-      { id: teamId, title: state.teamTitle || "", updated_at: new Date().toISOString() },
-      { onConflict: "id" }
-    );
+    // Update team title
+    await supabase.from("teams").update(
+      { title: state.teamTitle || "", updated_at: new Date().toISOString() }
+    ).eq("id", teamId);
 
+    // Sync players (squad)
     await supabase.from("players").delete().eq("team_id", teamId);
     if (state.squad?.length) {
-      await supabase.from("players").insert(
-        state.squad.map((p, i) => ({
-          id: p.id,
-          team_id: teamId,
-          name: p.name,
-          sort_order: i,
-        }))
-      );
+      const playersToInsert = state.squad.map((p, i) => ({
+        id: p.id,
+        team_id: teamId,
+        name: p.name,
+        sort_order: i,
+      }));
+      const { error } = await supabase.from("players").insert(playersToInsert);
+      if (error) {
+        console.error('Error inserting players:', error);
+      }
     }
 
+    // Sync matches
     for (const m of state.matches || []) {
       await supabase.from("matches").upsert(
         {
@@ -115,6 +144,7 @@ async function syncNormalizedToSupabase(state) {
         { onConflict: "id" }
       );
 
+      // Sync match players
       await supabase.from("match_players").delete().eq("match_id", m.id);
       if (m.players?.length) {
         await supabase.from("match_players").insert(
@@ -139,14 +169,16 @@ async function syncNormalizedToSupabase(state) {
   }
 }
 
-async function saveToSupabase(state) {
-  if (!supabase) return;
+async function saveToSupabase(state, teamId) {
+  if (!supabase || !teamId) return;
   try {
+    // Save blob storage (app_state uses team_id as the row id)
     await supabase.from("app_state").upsert(
-      { id: APP_STATE_ROW_ID, data: getPersistedPayload(state), updated_at: new Date().toISOString() },
+      { id: teamId, data: getPersistedPayload(state), updated_at: new Date().toISOString() },
       { onConflict: "id" }
     );
-    await syncNormalizedToSupabase(state);
+    // Save normalized tables
+    await syncNormalizedToSupabase(state, teamId);
   } catch (e) {
     console.error("Failed to save to Supabase:", e);
   }
@@ -536,6 +568,9 @@ const Icon = ({ name, size = 24 }) => {
     up: <path d="M5 15l7-7 7 7" />,
     down: <path d="M19 9l-7 7-7-7" />,
     note: <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-7 0l9-9m0 0h-6m6 0v6" />,
+    building: <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />,
+    shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+    mail: <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -677,13 +712,14 @@ function downloadCSV(content, filename) {
 
 // --- PositionSelector ---
 
-function PositionSelector({ position, onChange }) {
+function PositionSelector({ position, onChange, disabled = false }) {
   const { role, side } = position || { role: null, side: null };
   const [expandedRole, setExpandedRole] = useState(null);
   const roles = ['GK', 'DEF', 'MID', 'FWD'];
   const sides = ['L', 'C', 'R'];
 
   const handleRoleClick = (newRole) => {
+    if (disabled) return;
     if (newRole === 'GK') {
       // GK has no sides, just set it directly
       onChange({ role: newRole, side: null });
@@ -699,6 +735,7 @@ function PositionSelector({ position, onChange }) {
   };
 
   const handleSideChange = (newSide) => {
+    if (disabled) return;
     onChange({ role: expandedRole, side: newSide });
     setExpandedRole(null);
   };
@@ -722,11 +759,12 @@ function PositionSelector({ position, onChange }) {
             <button
               key={r}
               onClick={() => handleRoleClick(r)}
+              disabled={disabled}
               className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1 ${
                 isSelected
                   ? 'bg-blue-600 text-white border-2 border-blue-600'
                   : 'bg-white text-blue-600 border-2 border-blue-500 hover:bg-blue-50'
-              }`}
+              } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <span>{formatRoleDisplay(r)}</span>
               {hasChevron && (
@@ -736,7 +774,7 @@ function PositionSelector({ position, onChange }) {
           );
         })}
       </div>
-      {expandedRole && (
+      {expandedRole && !disabled && (
         <div className="flex gap-1.5 pl-2">
           {sides.map((s) => (
             <button
@@ -832,7 +870,7 @@ function ComboSelect({ value, onChange, options, placeholder, error }) {
 
 // --- Squad ---
 
-function SquadView({ state, dispatch }) {
+function SquadView({ state, dispatch, canEdit = true }) {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editVal, setEditVal] = useState("");
@@ -850,26 +888,28 @@ function SquadView({ state, dispatch }) {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {editingTitle ? (
+          {editingTitle && canEdit ? (
             <input value={titleVal} onChange={(e) => setTitleVal(e.target.value)} autoFocus
               onBlur={() => { if (titleVal.trim()) dispatch({ type: "SET_TEAM_TITLE", title: titleVal.trim() }); setEditingTitle(false); }}
               onKeyDown={(e) => { if (e.key === "Enter") { if (titleVal.trim()) dispatch({ type: "SET_TEAM_TITLE", title: titleVal.trim() }); setEditingTitle(false); } }}
               className="text-2xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 outline-none w-48" />
           ) : (
-            <h1 className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition" onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }}>{state.teamTitle}</h1>
+            <h1 className={`text-2xl font-bold text-gray-900 ${canEdit ? 'cursor-pointer hover:text-blue-600' : ''} transition`} onClick={canEdit ? () => { setTitleVal(state.teamTitle); setEditingTitle(true); } : undefined}>{state.teamTitle}</h1>
           )}
-          {!editingTitle && <button onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }} className="text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>}
+          {!editingTitle && canEdit && <button onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }} className="text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>}
         </div>
         <span className="text-sm text-gray-500 font-medium">{state.squad.length} players</span>
       </div>
-      <div className="bg-white rounded-2xl border border-gray-200 p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Add new player</label>
-        <div className="flex gap-2">
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addPlayer()} placeholder="Player name"
-            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
-          <Btn variant="primary" size="md" onClick={addPlayer} disabled={!newName.trim()}>Add</Btn>
+      {canEdit && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Add new player</label>
+          <div className="flex gap-2">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addPlayer()} placeholder="Player name"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            <Btn variant="primary" size="md" onClick={addPlayer} disabled={!newName.trim()}>Add</Btn>
+          </div>
         </div>
-      </div>
+      )}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">Manage Players</h2>
@@ -879,18 +919,20 @@ function SquadView({ state, dispatch }) {
           {state.squad.map((p, index) => (
             <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition">
               <span className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">{index + 1}</span>
-              {editingId === p.id ? (
+              {editingId === p.id && canEdit ? (
                 <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} autoFocus
                   className="flex-1 px-3 py-1.5 rounded-lg border border-blue-300 outline-none text-sm" />
               ) : (
                 <span className="flex-1 text-sm font-medium text-gray-800">{p.name}</span>
               )}
-              <div className="flex items-center gap-1">
-                <button onClick={() => movePlayer(index, -1)} disabled={index === 0} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-20 transition"><Icon name="up" size={16} /></button>
-                <button onClick={() => movePlayer(index, 1)} disabled={index === state.squad.length - 1} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-20 transition"><Icon name="down" size={16} /></button>
-                <button onClick={() => startEditing(p)} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>
-                <button onClick={() => dispatch({ type: "REMOVE_SQUAD_PLAYER", playerId: p.id })} className="w-8 h-8 rounded-lg hover:bg-red-100 flex items-center justify-center text-gray-400 hover:text-red-500 transition"><Icon name="x" size={16} /></button>
-              </div>
+              {canEdit && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => movePlayer(index, -1)} disabled={index === 0} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-20 transition"><Icon name="up" size={16} /></button>
+                  <button onClick={() => movePlayer(index, 1)} disabled={index === state.squad.length - 1} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-20 transition"><Icon name="down" size={16} /></button>
+                  <button onClick={() => startEditing(p)} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>
+                  <button onClick={() => dispatch({ type: "REMOVE_SQUAD_PLAYER", playerId: p.id })} className="w-8 h-8 rounded-lg hover:bg-red-100 flex items-center justify-center text-gray-400 hover:text-red-500 transition"><Icon name="x" size={16} /></button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -904,7 +946,7 @@ function SquadView({ state, dispatch }) {
 
 // --- Clubs ---
 
-function ClubsView({ state, dispatch }) {
+function ClubsView({ state, dispatch, canEdit = true }) {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editVal, setEditVal] = useState("");
@@ -918,14 +960,16 @@ function ClubsView({ state, dispatch }) {
         <h1 className="text-2xl font-bold text-gray-900">Clubs</h1>
         <span className="text-sm text-gray-500 font-medium">{state.clubs.length} clubs</span>
       </div>
-      <div className="bg-white rounded-2xl border border-gray-200 p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Add new club</label>
-        <div className="flex gap-2">
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addClub()} placeholder="Club name"
-            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
-          <Btn variant="primary" size="md" onClick={addClub} disabled={!newName.trim()}>Add</Btn>
+      {canEdit && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Add new club</label>
+          <div className="flex gap-2">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addClub()} placeholder="Club name"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            <Btn variant="primary" size="md" onClick={addClub} disabled={!newName.trim()}>Add</Btn>
+          </div>
         </div>
-      </div>
+      )}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">Manage Clubs</h2>
@@ -935,16 +979,18 @@ function ClubsView({ state, dispatch }) {
           {state.clubs.map((c, index) => (
             <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition">
               <span className="w-7 h-7 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center justify-center flex-shrink-0">{index + 1}</span>
-              {editingId === c.id ? (
+              {editingId === c.id && canEdit ? (
                 <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} autoFocus
                   className="flex-1 px-3 py-1.5 rounded-lg border border-blue-300 outline-none text-sm" />
               ) : (
                 <span className="flex-1 text-sm font-medium text-gray-800">{c.name}</span>
               )}
-              <div className="flex items-center gap-1">
-                <button onClick={() => startEditing(c)} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>
-                <button onClick={() => dispatch({ type: "REMOVE_CLUB", clubId: c.id })} className="w-8 h-8 rounded-lg hover:bg-red-100 flex items-center justify-center text-gray-400 hover:text-red-500 transition"><Icon name="x" size={16} /></button>
-              </div>
+              {canEdit && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => startEditing(c)} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>
+                  <button onClick={() => dispatch({ type: "REMOVE_CLUB", clubId: c.id })} className="w-8 h-8 rounded-lg hover:bg-red-100 flex items-center justify-center text-gray-400 hover:text-red-500 transition"><Icon name="x" size={16} /></button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -958,7 +1004,12 @@ function ClubsView({ state, dispatch }) {
 
 // --- Dashboard ---
 
-function Dashboard({ state, dispatch }) {
+function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false }) {
+  // Super admins see system stats overview instead of match stats
+  if (isSuperAdmin) {
+    return <SystemStatsView />;
+  }
+
   const [sortKey, setSortKey] = useState("totalMinutes");
   const [sortDir, setSortDir] = useState("desc");
   const matches = [...state.matches].reverse();
@@ -1004,7 +1055,7 @@ function Dashboard({ state, dispatch }) {
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="flex items-center gap-2">
           {matches.length > 0 && <Btn variant="default" onClick={() => exportDashboardCSV(state)}>Export</Btn>}
-          <Btn variant="primary" onClick={() => dispatch({ type: "SET_VIEW", view: "new-match" })}>New Match</Btn>
+          {canEdit && <Btn variant="primary" onClick={() => dispatch({ type: "SET_VIEW", view: "new-match" })}>New Match</Btn>}
         </div>
       </div>
       {totalMatches > 0 && (
@@ -1115,7 +1166,7 @@ function Dashboard({ state, dispatch }) {
 
 // --- New Match ---
 
-function NewMatch({ state, dispatch }) {
+function NewMatch({ state, dispatch, canEdit = true }) {
   const [opponent, setOpponent] = useState("");
   const [venue, setVenue] = useState("home");
   const [date, setDate] = useState(() => {
@@ -1211,7 +1262,7 @@ function NewMatch({ state, dispatch }) {
 
 // --- Match Setup ---
 
-function MatchSetup({ state, dispatch }) {
+function MatchSetup({ state, dispatch, canEdit = true }) {
   const match = state.currentMatch;
   const [editingId, setEditingId] = useState(null);
   const [editVal, setEditVal] = useState("");
@@ -1227,7 +1278,7 @@ function MatchSetup({ state, dispatch }) {
           <h1 className="text-xl font-bold text-gray-900">vs {match.opponent}</h1>
           <p className="text-xs text-gray-500">{formatDate(match.date)} · {match.venue === "home" ? "Home" : "Away"}</p>
         </div>
-        <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "SET_VIEW", view: "match-edit" })}><Icon name="edit" size={18} /> Edit details</Btn>
+        {canEdit && <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "SET_VIEW", view: "match-edit" })}><Icon name="edit" size={18} /> Edit details</Btn>}
       </div>
       <div className="bg-white rounded-2xl border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1238,38 +1289,49 @@ function MatchSetup({ state, dispatch }) {
           {match.players.map((p) => (
             <div key={p.id} className={`flex flex-col gap-2 p-3 rounded-xl transition ${p.starting ? "bg-blue-50 border border-blue-200" : "bg-gray-50 border border-transparent"}`}>
               <div className="flex items-center gap-3">
-                <button onClick={() => dispatch({ type: "TOGGLE_STARTING", playerId: p.id })}
-                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition ${p.starting ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300"}`}>
-                  {p.starting && <Icon name="check" size={14} />}
-                </button>
-                {editingId === p.id ? (
+                {canEdit ? (
+                  <button onClick={() => dispatch({ type: "TOGGLE_STARTING", playerId: p.id })}
+                    className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition ${p.starting ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300"}`}>
+                    {p.starting && <Icon name="check" size={14} />}
+                  </button>
+                ) : (
+                  <span className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center ${p.starting ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300"}`}>
+                    {p.starting && <Icon name="check" size={14} />}
+                  </span>
+                )}
+                {editingId === p.id && canEdit ? (
                   <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} autoFocus
                     className="flex-1 px-2 py-1 rounded-lg border border-blue-300 outline-none text-sm" />
                 ) : (
-                  <span className="flex-1 text-sm font-medium text-gray-800 cursor-pointer" onClick={() => startEditing(p)}>{p.name}</span>
+                  <span className={`flex-1 text-sm font-medium text-gray-800 ${canEdit ? 'cursor-pointer' : ''}`} onClick={canEdit ? () => startEditing(p) : undefined}>{p.name}</span>
                 )}
-                <Btn variant="ghost" size="xs" onClick={() => startEditing(p)}><Icon name="edit" /></Btn>
-                <Btn variant="ghost" size="xs" onClick={() => dispatch({ type: "REMOVE_MATCH_PLAYER", playerId: p.id })}><Icon name="x" /></Btn>
+                {canEdit && (
+                  <>
+                    <Btn variant="ghost" size="xs" onClick={() => startEditing(p)}><Icon name="edit" /></Btn>
+                    <Btn variant="ghost" size="xs" onClick={() => dispatch({ type: "REMOVE_MATCH_PLAYER", playerId: p.id })}><Icon name="x" /></Btn>
+                  </>
+                )}
               </div>
               <div className="pl-9">
                 <PositionSelector
                   position={p.position}
-                  onChange={(position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position })}
+                  onChange={canEdit ? (position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position }) : undefined}
+                  disabled={!canEdit}
                 />
               </div>
             </div>
           ))}
         </div>
-        <Btn variant="default" size="sm" className="w-full mt-3" onClick={() => dispatch({ type: "ADD_MATCH_PLAYER", name: `Player ${match.players.length + 1}` })}>Add Player</Btn>
+        {canEdit && <Btn variant="default" size="sm" className="w-full mt-3" onClick={() => dispatch({ type: "ADD_MATCH_PLAYER", name: `Player ${match.players.length + 1}` })}>Add Player</Btn>}
       </div>
-      <Btn variant="primary" size="lg" className="w-full" onClick={() => dispatch({ type: "START_MATCH" })}>Start Match</Btn>
+      {canEdit && <Btn variant="primary" size="lg" className="w-full" onClick={() => dispatch({ type: "START_MATCH" })}>Start Match</Btn>}
     </div>
   );
 }
 
 // --- Live Match ---
 
-function LiveMatch({ state, dispatch }) {
+function LiveMatch({ state, dispatch, canEdit = true }) {
   const match = state.currentMatch;
   const [expanded, setExpanded] = useState(null);
   const [expandedBench, setExpandedBench] = useState(null);
@@ -1288,10 +1350,16 @@ function LiveMatch({ state, dispatch }) {
       </div>
       <div className="bg-gray-900 rounded-2xl p-4 text-white">
         <div className="flex items-center justify-center gap-3 mb-3">
-          <button onClick={() => dispatch({ type: "TOGGLE_MATCH_CLOCK" })}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${match.matchRunning ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-500 hover:bg-emerald-600"}`}>
-            <Icon name={match.matchRunning ? "pause" : "play"} size={20} />
-          </button>
+          {canEdit ? (
+            <button onClick={() => dispatch({ type: "TOGGLE_MATCH_CLOCK" })}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${match.matchRunning ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-500 hover:bg-emerald-600"}`}>
+              <Icon name={match.matchRunning ? "pause" : "play"} size={20} />
+            </button>
+          ) : (
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${match.matchRunning ? "bg-amber-500" : "bg-emerald-500"} opacity-50`}>
+              <Icon name={match.matchRunning ? "pause" : "play"} size={20} />
+            </div>
+          )}
           <div className="text-center">
             <div className="text-3xl font-mono font-bold tabular-nums">{formatTime(match.matchSeconds)}</div>
             <div className="text-xs opacity-50 mt-0.5">Match Time</div>
@@ -1301,18 +1369,30 @@ function LiveMatch({ state, dispatch }) {
           <div className="text-center flex-1">
             <div className="text-xs opacity-60 mb-1">{TEAM_NAME}</div>
             <div className="flex items-center justify-center gap-3">
-              <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: -1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="minus" size={14} /></button>
-              <span className="text-3xl font-bold tabular-nums">{match.teamGoals}</span>
-              <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: 1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="plus" size={14} /></button>
+              {canEdit ? (
+                <>
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: -1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="minus" size={14} /></button>
+                  <span className="text-3xl font-bold tabular-nums">{match.teamGoals}</span>
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: 1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="plus" size={14} /></button>
+                </>
+              ) : (
+                <span className="text-3xl font-bold tabular-nums">{match.teamGoals}</span>
+              )}
             </div>
           </div>
           <div className="text-2xl font-light opacity-30 mx-4">–</div>
           <div className="text-center flex-1">
             <div className="text-xs opacity-60 mb-1">{match.opponent}</div>
             <div className="flex items-center justify-center gap-3">
-              <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: -1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="minus" size={14} /></button>
-              <span className="text-3xl font-bold tabular-nums">{match.opponentGoals}</span>
-              <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: 1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="plus" size={14} /></button>
+              {canEdit ? (
+                <>
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: -1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="minus" size={14} /></button>
+                  <span className="text-3xl font-bold tabular-nums">{match.opponentGoals}</span>
+                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: 1 })} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition"><Icon name="plus" size={14} /></button>
+                </>
+              ) : (
+                <span className="text-3xl font-bold tabular-nums">{match.opponentGoals}</span>
+              )}
             </div>
           </div>
         </div>
@@ -1320,10 +1400,12 @@ function LiveMatch({ state, dispatch }) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-1">🏃 On Field ({onField.length})</h2>
-          <div className="flex gap-1.5">
-            <Btn variant="primary" size="xs" onClick={() => onField.forEach((p) => { if (!p.running) dispatch({ type: "TOGGLE_TIMER", playerId: p.id }); })}>Start all</Btn>
-            <Btn variant="warning" size="xs" onClick={() => onField.forEach((p) => { if (p.running) dispatch({ type: "TOGGLE_TIMER", playerId: p.id }); })}>Pause all</Btn>
-          </div>
+          {canEdit && (
+            <div className="flex gap-1.5">
+              <Btn variant="primary" size="xs" onClick={() => onField.forEach((p) => { if (!p.running) dispatch({ type: "TOGGLE_TIMER", playerId: p.id }); })}>Start all</Btn>
+              <Btn variant="warning" size="xs" onClick={() => onField.forEach((p) => { if (p.running) dispatch({ type: "TOGGLE_TIMER", playerId: p.id }); })}>Pause all</Btn>
+            </div>
+          )}
         </div>
         <div className="space-y-2">
           {onField.map((p) => (
@@ -1340,40 +1422,50 @@ function LiveMatch({ state, dispatch }) {
                   </div>
                   <div className="text-lg font-mono font-bold text-blue-600 tabular-nums">{formatTime(p.seconds)}</div>
                 </div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => dispatch({ type: "TOGGLE_TIMER", playerId: p.id })}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${p.running ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}>
-                    <Icon name={p.running ? "pause" : "play"} />
-                  </button>
-                  <button onClick={() => dispatch({ type: "SUB_OFF", playerId: p.id })}
-                    className="w-10 h-10 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 flex items-center justify-center transition">
-                    <Icon name="swap" />
-                  </button>
+                {canEdit ? (
+                  <div className="flex gap-1.5">
+                    <button onClick={() => dispatch({ type: "TOGGLE_TIMER", playerId: p.id })}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${p.running ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}>
+                      <Icon name={p.running ? "pause" : "play"} />
+                    </button>
+                    <button onClick={() => dispatch({ type: "SUB_OFF", playerId: p.id })}
+                      className="w-10 h-10 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 flex items-center justify-center transition">
+                      <Icon name="swap" />
+                    </button>
+                    <button onClick={() => setExpanded(expanded === p.id ? null : p.id)}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${expanded === p.id ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                      <Icon name={expanded === p.id ? "up" : "down"} />
+                    </button>
+                  </div>
+                ) : (
                   <button onClick={() => setExpanded(expanded === p.id ? null : p.id)}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${expanded === p.id ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                     <Icon name={expanded === p.id ? "up" : "down"} />
                   </button>
-                </div>
+                )}
               </div>
               {expanded === p.id && (
                 <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {[{ key: "goals", label: "⚽ Goals" }, { key: "assists", label: "🅰️ Assists" }].map((s) => (
-                      <div key={s.key} className="text-center">
-                        <div className="text-xs text-gray-500 mb-1">{s.label}</div>
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: s.key, delta: -1 })} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm font-bold">−</button>
-                          <span className="w-8 text-center font-bold text-base">{p[s.key]}</span>
-                          <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: s.key, delta: 1 })} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm font-bold">+</button>
+                  {canEdit && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {[{ key: "goals", label: "⚽ Goals" }, { key: "assists", label: "🅰️ Assists" }].map((s) => (
+                        <div key={s.key} className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">{s.label}</div>
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: s.key, delta: -1 })} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm font-bold">−</button>
+                            <span className="w-8 text-center font-bold text-base">{p[s.key]}</span>
+                            <button onClick={() => dispatch({ type: "UPDATE_STAT", playerId: p.id, stat: s.key, delta: 1 })} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm font-bold">+</button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Position</div>
                     <PositionSelector
                       position={p.position}
-                      onChange={(position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position })}
+                      onChange={canEdit ? (position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position }) : undefined}
+                      disabled={!canEdit}
                     />
                   </div>
                   {p.events.length > 0 && (
@@ -1386,12 +1478,14 @@ function LiveMatch({ state, dispatch }) {
                       </div>
                     </div>
                   )}
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Notes</label>
-                    <textarea value={p.notes} onChange={(e) => dispatch({ type: "UPDATE_PLAYER_NOTES", playerId: p.id, notes: e.target.value })}
-                      placeholder="Add notes for this player..."
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-sm resize-none" rows={2} />
-                  </div>
+                  {canEdit && (
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Notes</label>
+                      <textarea value={p.notes} onChange={(e) => dispatch({ type: "UPDATE_PLAYER_NOTES", playerId: p.id, notes: e.target.value })}
+                        placeholder="Add notes for this player..."
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-sm resize-none" rows={2} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1416,7 +1510,7 @@ function LiveMatch({ state, dispatch }) {
                     </div>
                     <div className="text-sm font-mono text-gray-400 tabular-nums">{formatTime(p.seconds)}</div>
                   </div>
-                  <Btn variant="primary" size="sm" onClick={() => dispatch({ type: "SUB_ON", playerId: p.id })}>Sub On</Btn>
+                  {canEdit && <Btn variant="primary" size="sm" onClick={() => dispatch({ type: "SUB_ON", playerId: p.id })}>Sub On</Btn>}
                   <button onClick={() => setExpandedBench(expandedBench === p.id ? null : p.id)}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${expandedBench === p.id ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                     <Icon name={expandedBench === p.id ? "up" : "down"} />
@@ -1436,21 +1530,23 @@ function LiveMatch({ state, dispatch }) {
           </div>
         </div>
       )}
-      <div className="pt-2">
-        <Btn variant="danger" size="lg" className="w-full" onClick={() => setConfirmEnd(true)}>End Match</Btn>
-        <Modal
-          isOpen={confirmEnd}
-          onClose={() => setConfirmEnd(false)}
-          title="End Match"
-          message="Are you sure you want to end this match? All running timers will be stopped and the match will be marked as completed."
-          onConfirm={() => {
-            dispatch({ type: "END_MATCH" });
-            setConfirmEnd(false);
-          }}
-          confirmText="End Match"
-          confirmVariant="danger"
-        />
-      </div>
+      {canEdit && (
+        <div className="pt-2">
+          <Btn variant="danger" size="lg" className="w-full" onClick={() => setConfirmEnd(true)}>End Match</Btn>
+          <Modal
+            isOpen={confirmEnd}
+            onClose={() => setConfirmEnd(false)}
+            title="End Match"
+            message="Are you sure you want to end this match? All running timers will be stopped and the match will be marked as completed."
+            onConfirm={() => {
+              dispatch({ type: "END_MATCH" });
+              setConfirmEnd(false);
+            }}
+            confirmText="End Match"
+            confirmVariant="danger"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1459,7 +1555,7 @@ function LiveMatch({ state, dispatch }) {
 
 const DRAWER_DURATION_MS = 300;
 
-function MatchEdit({ state, dispatch }) {
+function MatchEdit({ state, dispatch, canEdit = true }) {
   const match = state.currentMatch;
   const isCompleted = match.status === "completed";
   const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
@@ -1597,20 +1693,24 @@ function MatchEdit({ state, dispatch }) {
       <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Opponent</label>
-          <ComboSelect
-            value={match.opponent}
-            onChange={handleOpponentChange}
-            options={clubNames}
-            placeholder="e.g. City FC"
-            error={false}
-          />
+          {canEdit ? (
+            <ComboSelect
+              value={match.opponent}
+              onChange={handleOpponentChange}
+              options={clubNames}
+              placeholder="e.g. City FC"
+              error={false}
+            />
+          ) : (
+            <div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700">{match.opponent}</div>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
           <div className="flex gap-2">
             {["home", "away"].map((v) => (
-              <button key={v} onClick={() => dispatch({ type: "UPDATE_MATCH_META", venue: v })}
-                className={`flex-1 py-2.5 rounded-xl font-medium transition ${match.venue === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              <button key={v} onClick={canEdit ? () => dispatch({ type: "UPDATE_MATCH_META", venue: v }) : undefined} disabled={!canEdit}
+                className={`flex-1 py-2.5 rounded-xl font-medium transition ${match.venue === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {v === "home" ? "🏠 Home" : "✈️ Away"}
               </button>
             ))}
@@ -1618,20 +1718,20 @@ function MatchEdit({ state, dispatch }) {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-          <input type="date" value={match.date} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", date: e.target.value })}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+          <input type="date" value={match.date} onChange={canEdit ? (e) => dispatch({ type: "UPDATE_MATCH_META", date: e.target.value }) : undefined} disabled={!canEdit}
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none disabled:bg-gray-50 disabled:cursor-not-allowed" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Tag <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input value={match.tag || ""} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", tag: e.target.value })}
+          <input value={match.tag || ""} onChange={canEdit ? (e) => dispatch({ type: "UPDATE_MATCH_META", tag: e.target.value }) : undefined} disabled={!canEdit}
             placeholder="e.g. Season 2026"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none disabled:bg-gray-50 disabled:cursor-not-allowed" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
-          <textarea value={match.description || ""} onChange={(e) => dispatch({ type: "UPDATE_MATCH_META", description: e.target.value })}
+          <textarea value={match.description || ""} onChange={canEdit ? (e) => dispatch({ type: "UPDATE_MATCH_META", description: e.target.value }) : undefined} disabled={!canEdit}
             placeholder="Match notes..."
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none" rows={2} />
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none disabled:bg-gray-50 disabled:cursor-not-allowed" rows={2} />
         </div>
       </div>
 
@@ -1643,25 +1743,37 @@ function MatchEdit({ state, dispatch }) {
               <div className="text-center">
                 <div className="text-xs text-gray-500 mb-1">Us</div>
                 <div className="flex items-center justify-center gap-2">
-                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: -1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
-                  <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.teamGoals}</span>
-                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: 1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
+                  {canEdit ? (
+                    <>
+                      <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: -1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
+                      <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.teamGoals}</span>
+                      <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "teamGoals", delta: 1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
+                    </>
+                  ) : (
+                    <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.teamGoals}</span>
+                  )}
                 </div>
               </div>
               <span className="text-xl text-gray-300">–</span>
               <div className="text-center">
                 <div className="text-xs text-gray-500 mb-1">{match.opponent}</div>
                 <div className="flex items-center justify-center gap-2">
-                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: -1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
-                  <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.opponentGoals}</span>
-                  <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: 1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
+                  {canEdit ? (
+                    <>
+                      <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: -1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
+                      <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.opponentGoals}</span>
+                      <button onClick={() => dispatch({ type: "UPDATE_SCORE", field: "opponentGoals", delta: 1 })} className="w-9 h-9 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
+                    </>
+                  ) : (
+                    <span className="w-10 text-center text-2xl font-bold tabular-nums">{match.opponentGoals}</span>
+                  )}
                 </div>
               </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Match length (minutes)</label>
-              <input type="number" min={0} value={Math.round(match.matchSeconds / 60)} onChange={(e) => dispatch({ type: "UPDATE_MATCH_SECONDS", seconds: Math.max(0, parseInt(e.target.value, 10) || 0) * 60 })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+              <input type="number" min={0} value={Math.round(match.matchSeconds / 60)} onChange={canEdit ? (e) => dispatch({ type: "UPDATE_MATCH_SECONDS", seconds: Math.max(0, parseInt(e.target.value, 10) || 0) * 60 }) : undefined} disabled={!canEdit}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none disabled:bg-gray-50 disabled:cursor-not-allowed" />
             </div>
           </div>
 
@@ -1888,21 +2000,23 @@ function MatchEdit({ state, dispatch }) {
       )}
 
       <div className="flex gap-2">
-        <Btn variant="danger" size="lg" className="flex-1" onClick={() => setConfirmDelete(true)}>Delete Match</Btn>
-        <Btn variant="primary" size="lg" className="flex-1" onClick={goBack}>Done</Btn>
+        {canEdit && <Btn variant="danger" size="lg" className="flex-1" onClick={() => setConfirmDelete(true)}>Delete Match</Btn>}
+        <Btn variant="primary" size="lg" className={canEdit ? "flex-1" : "w-full"} onClick={goBack}>Done</Btn>
       </div>
-      <Modal
-        isOpen={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        title="Delete Match"
-        message="Are you sure you want to delete this match? This action cannot be undone."
-        onConfirm={() => {
-          dispatch({ type: "DELETE_MATCH" });
-          setConfirmDelete(false);
-        }}
-        confirmText="Delete Match"
-        confirmVariant="danger"
-      />
+      {canEdit && (
+        <Modal
+          isOpen={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          title="Delete Match"
+          message="Are you sure you want to delete this match? This action cannot be undone."
+          onConfirm={() => {
+            dispatch({ type: "DELETE_MATCH" });
+            setConfirmDelete(false);
+          }}
+          confirmText="Delete Match"
+          confirmVariant="danger"
+        />
+      )}
     </div>
   );
 }
@@ -1910,27 +2024,95 @@ function MatchEdit({ state, dispatch }) {
 // --- App ---
 
 export default function App() {
+  const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs, isSuperAdmin } = useAuth();
+  const { canEdit, isReadOnly } = usePermissions();
+  const [showSignup, setShowSignup] = useState(false);
+  const [guestMode, setGuestMode] = useState(false);
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [justCreatedTeam, setJustCreatedTeam] = useState(false);
   const intervalRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
+  // Handle guest sign out
+  function handleGuestSignOut() {
+    if (confirm('Are you sure you want to sign out? Your guest data will be deleted.')) {
+      localStorage.clear();
+      setGuestMode(false);
+      dispatch({ type: "LOAD_SAVED", data: initialState });
+    }
+  }
+
+  // Navigate to squad page when team is created
+  useEffect(() => {
+    if (currentTeam && justCreatedTeam) {
+      dispatch({ type: "SET_VIEW", view: "squad" });
+      setJustCreatedTeam(false);
+    }
+  }, [currentTeam, justCreatedTeam]);
+
+  // Load team data when currentTeam changes
   useEffect(() => {
     (async () => {
       let data = null;
-      if (supabase) data = await loadFromSupabase();
-      if (!data) data = loadState();
+
+      // If authenticated with a team, load from Supabase
+      if (isAuthenticated && currentTeam?.team_id) {
+        // Validate team_id is a UUID
+        const isValidUUID = typeof currentTeam.team_id === 'string' && currentTeam.team_id.includes('-');
+
+        if (!isValidUUID) {
+          console.error('INVALID TEAM ID DETECTED:', currentTeam.team_id);
+          console.error('Clearing localStorage and forcing reload...');
+          localStorage.clear();
+          window.location.reload();
+          return;
+        }
+
+        data = await loadFromSupabase(currentTeam.team_id);
+
+        // If no Supabase data for authenticated user, start fresh
+        if (!data) {
+          data = {
+            ...initialState,
+            teamTitle: currentTeam.team_title,
+            squad: [], // Start with empty squad for new team
+          };
+        } else {
+          // Use team title from currentTeam
+          data.teamTitle = currentTeam.team_title;
+        }
+      } else {
+        // Guest mode - use localStorage
+        data = loadState();
+      }
+
       dispatch({ type: "LOAD_SAVED", data: data || initialState });
     })();
-  }, []);
+  }, [currentTeam?.team_id, isAuthenticated]);
 
+  // Save data whenever state changes
   useEffect(() => {
     if (!state.loaded) return;
+
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
+      // Always save to localStorage
       saveState(state);
-      saveToSupabase(state);
+
+      // Also save to Supabase if authenticated with a team
+      if (isAuthenticated && currentTeam?.team_id) {
+        // Validate team_id is a UUID (contains hyphens)
+        const isValidUUID = typeof currentTeam.team_id === 'string' && currentTeam.team_id.includes('-');
+
+        if (!isValidUUID) {
+          console.error('Invalid team_id (not a UUID):', currentTeam.team_id);
+          return;
+        }
+
+        saveToSupabase(state, currentTeam.team_id);
+      }
     }, 500);
-  }, [state]);
+  }, [state, isAuthenticated, currentTeam?.team_id]);
 
   useEffect(() => {
     if (state.currentMatch?.status === "live") {
@@ -1943,17 +2125,91 @@ export default function App() {
 
   const navItems = [
     { view: "dashboard", icon: "home", label: "Dashboard" },
-    { view: "new-match", icon: "plus", label: "New Match" },
-    { view: "squad", icon: "users", label: "Squad" },
-    { view: "clubs", icon: "trophy", label: "Clubs" },
+    ...(!isSuperAdmin ? [{ view: "new-match", icon: "plus", label: "New Match" }] : []),
+    ...(!isSuperAdmin ? [{ view: "squad", icon: "users", label: "Team" }] : []),
+    ...(!isSuperAdmin ? [{ view: "clubs", icon: "trophy", label: "Clubs" }] : []),
+    ...(isSuperAdmin ? [
+      { view: "users", icon: "users", label: "Users" },
+      { view: "invitations", icon: "mail", label: "Invitations" },
+      { view: "organizations", icon: "building", label: "Organizations" },
+    ] : []),
   ];
 
+  // Show loading screen while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth screens if not authenticated and not in guest mode
+  if (!isAuthenticated && !guestMode) {
+    if (showSignup) {
+      return (
+        <SignupScreen
+          onSwitchToLogin={() => setShowSignup(false)}
+          onContinueAsGuest={() => setGuestMode(true)}
+        />
+      );
+    }
+    return (
+      <LoginScreen
+        onSwitchToSignup={() => setShowSignup(true)}
+        onContinueAsGuest={() => setGuestMode(true)}
+      />
+    );
+  }
+
+  // Show loading screen while app data is loading
   if (!state.loaded) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show team selection prompt if authenticated but no team selected
+  if (isAuthenticated && !currentTeam) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header with user menu */}
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-gray-900">Soccer Tracker</h1>
+          <UserMenu />
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 shadow-lg p-8">
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">
+                <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-600">
+                  <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome!</h2>
+              <p className="text-gray-600 mb-6">Create your first team to get started</p>
+            </div>
+
+            <TeamSelector onTeamCreated={() => setJustCreatedTeam(true)} />
+
+            {userClubs.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs text-gray-500 text-center">
+                  You're a member of: <span className="font-medium text-gray-700">{userClubs.map(c => c.name).join(', ')}</span>
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1980,10 +2236,47 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Side menu: tablet and desktop */}
       <aside className="hidden md:flex md:flex-col md:w-56 md:fixed md:inset-y-0 md:left-0 bg-white border-r border-gray-200 z-30">
-        <div className="p-4 border-b border-gray-100">
-          <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>
+        <div className="p-4 border-b border-gray-100 space-y-3">
+          {isAuthenticated && currentTeam ? (
+            <>
+              <div className="flex flex-col gap-2 w-full">
+                <div className="w-full">
+                  <TeamSelector />
+                </div>
+                <div className="w-full">
+                  <UserMenu />
+                </div>
+              </div>
+              {isReadOnly && (
+                <div className="px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs text-amber-700 font-medium">Read-Only Access</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>
+          )}
+          {guestMode && !isAuthenticated && (
+            <div className="space-y-2">
+              <button
+                onClick={() => setGuestMode(false)}
+                className="w-full px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition"
+              >
+                Sign up to sync →
+              </button>
+              <button
+                onClick={handleGuestSignOut}
+                className="w-full px-3 py-2 text-red-600 rounded-lg text-xs font-medium hover:bg-red-50 transition flex items-center justify-center gap-1"
+              >
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign Out (Clear Data)
+              </button>
+            </div>
+          )}
         </div>
-        <nav className="p-3 flex flex-col gap-1">
+        <nav className="p-3 flex flex-col gap-1 flex-1">
           {navItems.map((item) => (
             <NavButton key={item.view} item={item} live={false} />
           ))}
@@ -1995,14 +2288,63 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 min-h-screen md:pl-56">
+        {/* Mobile header */}
+        <div className="md:hidden sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3">
+          <div className="flex items-center justify-between">
+            {isAuthenticated && currentTeam ? (
+              <div className="flex items-center gap-2 w-full justify-between">
+                <div className="flex items-center gap-2">
+                  <TeamSelector />
+                  {isReadOnly && (
+                    <span className="text-xs text-amber-600 font-medium">Read-only</span>
+                  )}
+                </div>
+                <UserMenu />
+              </div>
+            ) : (
+              <>
+                <span className="font-bold text-gray-900 text-lg truncate">{state.teamTitle}</span>
+                {guestMode && !isAuthenticated && (
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => setGuestMode(false)}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium whitespace-nowrap"
+                    >
+                      Sign Up
+                    </button>
+                    <button
+                      onClick={handleGuestSignOut}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Sign Out (Clear Data)"
+                    >
+                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
         <div className="max-w-lg mx-auto px-4 py-6 pb-24 md:pb-8 md:max-w-2xl">
-          {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} />}
-          {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} />}
-          {state.view === "squad" && <SquadView state={state} dispatch={dispatch} />}
-          {state.view === "clubs" && <ClubsView state={state} dispatch={dispatch} />}
-          {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} />}
-          {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} />}
-          {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} />}
+          {isAuthenticated && (
+            <>
+              <PendingInvitations />
+              <PendingClubInvitations />
+            </>
+          )}
+          {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} canEdit={canEdit} isSuperAdmin={isSuperAdmin} />}
+          {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "squad" && <SquadView state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "clubs" && <ClubsView state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "users" && isSuperAdmin && <UserManagementView />}
+          {state.view === "invitations" && isSuperAdmin && <InvitationManagementView />}
+          {state.view === "organizations" && isSuperAdmin && <OrganizationManager />}
+          {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} canEdit={canEdit} />}
         </div>
       </main>
 
