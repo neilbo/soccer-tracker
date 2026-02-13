@@ -7,6 +7,9 @@ export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
+  // Get full name from user metadata
+  const fullName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+
   // Close menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
@@ -38,26 +41,32 @@ export function UserMenu() {
   const roleBadge = getRoleBadge();
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative w-full" ref={menuRef}>
       {/* User Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition"
       >
-        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-sm">
-          {user.email?.[0]?.toUpperCase() || 'U'}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-sm shrink-0">
+            {fullName[0]?.toUpperCase() || 'U'}
+          </div>
+          <span className="text-sm font-medium text-gray-700 truncate">{fullName}</span>
         </div>
-        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
           <path d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden z-50">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden z-50">
           {/* User Info */}
           <div className="p-4 border-b border-gray-100">
-            <div className="font-medium text-sm text-gray-900 truncate">
+            <div className="font-semibold text-gray-900 truncate">
+              {fullName}
+            </div>
+            <div className="text-xs text-gray-500 truncate mt-0.5">
               {user.email}
             </div>
             {roleBadge && (

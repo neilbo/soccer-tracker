@@ -75,7 +75,22 @@ async function loadFromSupabase(teamId) {
   try {
     const { data, error } = await supabase.from("app_state").select("data").eq("id", teamId).single();
     if (error || !data?.data) return null;
-    return data.data;
+
+    // Fetch the max player ID globally to ensure uniqueness across all teams
+    const { data: maxPlayerData } = await supabase
+      .from("players")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .single();
+
+    const loadedData = data.data;
+    // Set nextPlayerId to max + 1 to avoid conflicts across teams
+    if (maxPlayerData?.id) {
+      loadedData.nextPlayerId = Math.max(loadedData.nextPlayerId || 0, maxPlayerData.id + 1);
+    }
+
+    return loadedData;
   } catch (e) {
     console.error("Failed to load from Supabase:", e);
     return null;
@@ -83,6 +98,7 @@ async function loadFromSupabase(teamId) {
 }
 
 async function syncNormalizedToSupabase(state, teamId) {
+  console.log('syncNormalizedToSupabase called with teamId:', teamId, 'type:', typeof teamId);
   if (!supabase || !teamId) return;
   try {
     // Update team title
@@ -93,14 +109,19 @@ async function syncNormalizedToSupabase(state, teamId) {
     // Sync players (squad)
     await supabase.from("players").delete().eq("team_id", teamId);
     if (state.squad?.length) {
-      await supabase.from("players").insert(
-        state.squad.map((p, i) => ({
-          id: p.id,
-          team_id: teamId,
-          name: p.name,
-          sort_order: i,
-        }))
-      );
+      const playersToInsert = state.squad.map((p, i) => ({
+        id: p.id,
+        team_id: teamId,
+        name: p.name,
+        sort_order: i,
+      }));
+      console.log('Inserting players:', playersToInsert);
+      const { data, error } = await supabase.from("players").insert(playersToInsert);
+      if (error) {
+        console.error('Error inserting players:', error);
+      } else {
+        console.log('Players inserted successfully:', data);
+      }
     }
 
     // Sync matches
@@ -2000,8 +2021,17 @@ export default function App() {
   const [showSignup, setShowSignup] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [justCreatedTeam, setJustCreatedTeam] = useState(false);
   const intervalRef = useRef(null);
   const saveTimeoutRef = useRef(null);
+
+  // Navigate to squad page when team is created
+  useEffect(() => {
+    if (currentTeam && justCreatedTeam) {
+      dispatch({ type: "SET_VIEW", view: "squad" });
+      setJustCreatedTeam(false);
+    }
+  }, [currentTeam, justCreatedTeam]);
 
   // Load team data when currentTeam changes
   useEffect(() => {
@@ -2010,17 +2040,34 @@ export default function App() {
 
       // If authenticated with a team, load from Supabase
       if (isAuthenticated && currentTeam?.team_id) {
+        // Validate team_id is a UUID
+        const isValidUUID = typeof currentTeam.team_id === 'string' && currentTeam.team_id.includes('-');
+
+        if (!isValidUUID) {
+          console.error('INVALID TEAM ID DETECTED:', currentTeam.team_id);
+          console.error('Clearing localStorage and forcing reload...');
+          localStorage.clear();
+          window.location.reload();
+          return;
+        }
+
         data = await loadFromSupabase(currentTeam.team_id);
-      }
 
-      // Fallback to localStorage (guest mode or no Supabase data)
-      if (!data) {
+        // If no Supabase data for authenticated user, start fresh
+        if (!data) {
+          console.log('No Supabase data for team, starting with fresh state');
+          data = {
+            ...initialState,
+            teamTitle: currentTeam.team_title,
+            squad: [], // Start with empty squad for new team
+          };
+        } else {
+          // Use team title from currentTeam
+          data.teamTitle = currentTeam.team_title;
+        }
+      } else {
+        // Guest mode - use localStorage
         data = loadState();
-      }
-
-      // Use team title from currentTeam if authenticated
-      if (data && isAuthenticated && currentTeam) {
-        data.teamTitle = currentTeam.team_title;
       }
 
       dispatch({ type: "LOAD_SAVED", data: data || initialState });
@@ -2038,6 +2085,18 @@ export default function App() {
 
       // Also save to Supabase if authenticated with a team
       if (isAuthenticated && currentTeam?.team_id) {
+        console.log('Saving to Supabase with currentTeam:', currentTeam);
+        console.log('currentTeam.team_id:', currentTeam.team_id, 'type:', typeof currentTeam.team_id);
+
+        // Validate team_id is a UUID (contains hyphens)
+        const isValidUUID = typeof currentTeam.team_id === 'string' && currentTeam.team_id.includes('-');
+
+        if (!isValidUUID) {
+          console.error('Invalid team_id (not a UUID):', currentTeam.team_id);
+          console.error('Skipping save to Supabase. Please refresh the page.');
+          return;
+        }
+
         saveToSupabase(state, currentTeam.team_id);
       }
     }, 500);
@@ -2055,7 +2114,7 @@ export default function App() {
   const navItems = [
     { view: "dashboard", icon: "home", label: "Dashboard" },
     { view: "new-match", icon: "plus", label: "New Match" },
-    { view: "squad", icon: "users", label: "Squad" },
+    { view: "squad", icon: "users", label: "Team" },
     { view: "clubs", icon: "trophy", label: "Clubs" },
   ];
 
@@ -2124,7 +2183,7 @@ export default function App() {
               <p className="text-gray-600 mb-6">Create your first team to get started</p>
             </div>
 
-            <TeamSelector />
+            <TeamSelector onTeamCreated={() => setJustCreatedTeam(true)} />
 
             {userClubs.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-100">
@@ -2163,9 +2222,13 @@ export default function App() {
         <div className="p-4 border-b border-gray-100 space-y-3">
           {isAuthenticated && currentTeam ? (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <TeamSelector />
-                <UserMenu />
+              <div className="flex flex-col gap-2 w-full">
+                <div className="w-full">
+                  <TeamSelector />
+                </div>
+                <div className="w-full">
+                  <UserMenu />
+                </div>
               </div>
               {isReadOnly && (
                 <div className="px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg">

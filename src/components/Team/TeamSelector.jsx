@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth, usePermissions } from '../../hooks/useAuth';
 import { InvitationManager } from './InvitationManager';
 
-export function TeamSelector() {
+export function TeamSelector({ onTeamCreated }) {
   const { currentTeam, teams, selectTeam, createNewTeam, userClubs } = useAuth();
   const { canEdit } = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
@@ -32,17 +32,29 @@ export function TeamSelector() {
 
     setCreating(true);
     const clubId = selectedClubId || null;
-    const { error } = await createNewTeam(newTeamName.trim(), clubId);
+
+    console.log('Creating team:', newTeamName, 'with club:', clubId);
+    const { team, error } = await createNewTeam(newTeamName.trim(), clubId);
 
     if (error) {
-      alert('Error creating team: ' + error.message);
+      console.error('Team creation error:', error);
+      alert('Error creating team: ' + (error.message || JSON.stringify(error)));
+      setCreating(false);
     } else {
+      console.log('Team created successfully:', team);
       setNewTeamName('');
       setSelectedClubId('');
       setShowCreateForm(false);
       setIsOpen(false);
+      setCreating(false);
+
+      // Wait a bit for team to be selected, then call callback
+      if (onTeamCreated) {
+        setTimeout(() => {
+          onTeamCreated();
+        }, 100);
+      }
     }
-    setCreating(false);
   }
 
   // Show create team button if no current team
@@ -134,24 +146,26 @@ export function TeamSelector() {
   }
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative w-full" ref={dropdownRef}>
       {/* Team Selector Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition text-sm font-medium text-gray-700"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition text-sm font-medium text-gray-700"
       >
-        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-        </svg>
-        <span className="max-w-[150px] truncate">{currentTeam.team_title}</span>
-        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+            <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          <span className="truncate">{currentTeam.team_title}</span>
+        </div>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
           <path d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden z-50">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden z-50">
           {!showCreateForm ? (
             <>
               {/* Team List */}

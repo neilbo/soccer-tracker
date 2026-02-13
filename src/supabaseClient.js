@@ -174,11 +174,15 @@ export async function getUserTeams() {
  */
 export async function createTeam(teamTitle, clubId = null) {
   if (!supabase) {
+    console.error('Supabase not configured');
     return { team: null, error: { message: "Supabase not configured" } };
   }
 
   const user = await getUser();
+  console.log('Creating team - User:', user.user?.id, 'Title:', teamTitle, 'Club:', clubId);
+
   if (!user.user) {
+    console.error('Not authenticated');
     return { team: null, error: { message: "Not authenticated" } };
   }
 
@@ -190,8 +194,11 @@ export async function createTeam(teamTitle, clubId = null) {
     .single();
 
   if (teamError) {
+    console.error('Team creation error:', teamError);
     return { team: null, error: teamError };
   }
+
+  console.log('Team created:', team);
 
   // Add user as team staff
   const { error: memberError } = await supabase
@@ -203,9 +210,11 @@ export async function createTeam(teamTitle, clubId = null) {
     });
 
   if (memberError) {
+    console.error('Team member error:', memberError);
     return { team: null, error: memberError };
   }
 
+  console.log('User added to team members');
   return { team, error: null };
 }
 

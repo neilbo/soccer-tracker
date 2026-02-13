@@ -115,12 +115,21 @@ export function AuthProvider({ children }) {
 
       // Set current team (from localStorage or first team)
       const savedTeamId = localStorage.getItem('currentTeamId');
-      const currentTeamData = savedTeamId
+
+      // Validate that savedTeamId is a UUID (not a legacy numeric ID)
+      const isUUID = savedTeamId && savedTeamId.includes('-');
+
+      const currentTeamData = (isUUID && savedTeamId)
         ? userTeams.find(t => t.team_id === savedTeamId)
         : userTeams[0];
 
       if (currentTeamData) {
+        console.log('Setting current team:', currentTeamData);
         setCurrentTeam(currentTeamData);
+      } else if (!isUUID && savedTeamId) {
+        // Clear invalid legacy team ID from localStorage
+        console.log('Clearing legacy team ID from localStorage:', savedTeamId);
+        localStorage.removeItem('currentTeamId');
       }
 
       // Load user's clubs
@@ -216,14 +225,18 @@ export function AuthProvider({ children }) {
   }
 
   function selectTeam(teamId) {
+    console.log('selectTeam called with teamId:', teamId, 'type:', typeof teamId);
     const team = teams.find(t => t.team_id === teamId);
     if (team) {
+      console.log('Found team:', team);
       setCurrentTeam(team);
+    } else {
+      console.error('Team not found with ID:', teamId);
     }
   }
 
   async function refreshTeams() {
-    if (!user) return;
+    if (!user) return { teams: [], error: null };
 
     const { teams: userTeams, error } = await getUserTeams();
 
@@ -248,9 +261,23 @@ export function AuthProvider({ children }) {
     const { team, error } = await createTeam(teamTitle, clubId);
 
     if (!error && team) {
-      await refreshTeams();
-      // Auto-select the new team
-      selectTeam(team.id);
+      console.log('Team created, refreshing teams...', team);
+
+      // Wait for teams to refresh
+      const { teams: updatedTeams } = await refreshTeams();
+
+      if (updatedTeams && updatedTeams.length > 0) {
+        // Find the newly created team by UUID
+        const newTeam = updatedTeams.find(t => t.team_id === team.id);
+        console.log('Found new team in refreshed list:', newTeam);
+
+        if (newTeam) {
+          // Set the team directly (don't use selectTeam which looks in old teams array)
+          setCurrentTeam(newTeam);
+        } else {
+          console.error('New team not found in refreshed teams list');
+        }
+      }
     }
 
     return { team, error };
