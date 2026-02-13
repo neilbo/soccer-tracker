@@ -66,20 +66,45 @@ AS $$
 DECLARE
   v_invitation club_invitations;
   v_club_member_id UUID;
+  user_email TEXT;
 BEGIN
-  -- Get the invitation
+  -- Get current user's email
+  SELECT email INTO user_email FROM auth.users WHERE id = auth.uid();
+
+  IF user_email IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Not authenticated');
+  END IF;
+
+  -- Get the invitation (first check if it exists at all)
   SELECT * INTO v_invitation
   FROM club_invitations
-  WHERE token = invitation_token
-    AND status = 'pending'
-    AND invitee_email = auth.email()
-    AND expires_at > now();
+  WHERE token = invitation_token;
 
-  -- Check if invitation exists and is valid
+  -- Check if invitation exists
   IF v_invitation.id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Invitation not found');
+  END IF;
+
+  -- Check if already accepted
+  IF v_invitation.status = 'accepted' THEN
+    RETURN json_build_object('success', false, 'error', 'This invitation has already been accepted');
+  END IF;
+
+  -- Check if declined
+  IF v_invitation.status = 'declined' THEN
+    RETURN json_build_object('success', false, 'error', 'This invitation has been declined');
+  END IF;
+
+  -- Check if expired
+  IF v_invitation.expires_at <= now() THEN
+    RETURN json_build_object('success', false, 'error', 'This invitation has expired');
+  END IF;
+
+  -- Check if email matches
+  IF v_invitation.invitee_email != user_email THEN
     RETURN json_build_object(
       'success', false,
-      'error', 'Invalid or expired invitation'
+      'error', 'This invitation was sent to ' || v_invitation.invitee_email || '. Please log in with that email address.'
     );
   END IF;
 

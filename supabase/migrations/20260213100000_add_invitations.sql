@@ -81,19 +81,39 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Not authenticated');
   END IF;
 
-  -- Get invitation
+  -- Get invitation (first check if it exists at all)
   SELECT * INTO invitation_record
   FROM invitations
-  WHERE token = invitation_token
-  AND status = 'pending'
-  AND invitee_email = user_email
-  AND expires_at > now();
+  WHERE token = invitation_token;
 
   IF invitation_record.id IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'Invalid or expired invitation');
+    RETURN json_build_object('success', false, 'error', 'Invitation not found');
   END IF;
 
-  -- Add user to team
+  -- Check if already accepted
+  IF invitation_record.status = 'accepted' THEN
+    RETURN json_build_object('success', false, 'error', 'This invitation has already been accepted');
+  END IF;
+
+  -- Check if declined
+  IF invitation_record.status = 'declined' THEN
+    RETURN json_build_object('success', false, 'error', 'This invitation has been declined');
+  END IF;
+
+  -- Check if expired
+  IF invitation_record.expires_at <= now() THEN
+    RETURN json_build_object('success', false, 'error', 'This invitation has expired');
+  END IF;
+
+  -- Check if email matches
+  IF invitation_record.invitee_email != user_email THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'This invitation was sent to ' || invitation_record.invitee_email || '. Please log in with that email address.'
+    );
+  END IF;
+
+  -- All checks passed, add user to team
   INSERT INTO team_members (team_id, user_id, role)
   VALUES (invitation_record.team_id, auth.uid(), invitation_record.role)
   ON CONFLICT (team_id, user_id) DO UPDATE

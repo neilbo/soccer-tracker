@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { migrateGuestDataToTeam, getAllClubs, addUserToClub } from '../../supabaseClient';
+import { migrateGuestDataToTeam, getAllClubs, addUserToClub, getInvitationByToken } from '../../supabaseClient';
 import { EmailVerificationScreen } from './EmailVerificationScreen';
 
 export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
@@ -15,9 +15,35 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
   const [loading, setLoading] = useState(false);
   const [migratingData, setMigratingData] = useState(false);
   const [showEmailVerification, setShowEmailVerification] = useState(false);
+  const [invitationInfo, setInvitationInfo] = useState(null);
+  const [hasInvitation, setHasInvitation] = useState(false);
 
-  // Load available clubs on mount
+  // Load invitation info if coming from invitation link
   useEffect(() => {
+    async function checkInvitation() {
+      const pendingToken = sessionStorage.getItem('pending_invitation_token');
+      if (pendingToken) {
+        setHasInvitation(true);
+        const { invitation, error: invError } = await getInvitationByToken(pendingToken);
+        if (invitation && !invError) {
+          setInvitationInfo(invitation);
+          // Pre-fill email if available
+          if (invitation.invitee_email) {
+            setEmail(invitation.invitee_email);
+          }
+        }
+      }
+    }
+    checkInvitation();
+  }, []);
+
+  // Load available clubs on mount (only if not coming from invitation)
+  useEffect(() => {
+    if (hasInvitation) {
+      // Skip loading clubs if user is coming from invitation
+      return;
+    }
+
     async function loadClubs() {
       const { clubs: clubsList, error: clubsError } = await getAllClubs();
       if (!clubsError && clubsList) {
@@ -31,7 +57,7 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
       }
     }
     loadClubs();
-  }, []);
+  }, [hasInvitation]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -41,6 +67,13 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     // Validate password length
     if (password.length < 6) {
       setError('Password must be at least 6 characters long');
+      setLoading(false);
+      return;
+    }
+
+    // Validate organization selection (only if not coming from invitation)
+    if (!hasInvitation && !selectedClubId && !teamName.trim()) {
+      setError('Please select an organization or enter a team name');
       setLoading(false);
       return;
     }
@@ -55,7 +88,8 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     }
 
     // Store signup data for later (after email verification)
-    if (selectedClubId || teamName.trim()) {
+    // Don't store if coming from invitation - the invitation token will handle it
+    if (!hasInvitation && (selectedClubId || teamName.trim())) {
       localStorage.setItem('pendingSignupData', JSON.stringify({
         clubId: selectedClubId,
         teamName: teamName.trim(),
@@ -145,58 +179,82 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
               <p className="text-xs text-gray-500 mt-1">At least 6 characters</p>
             </div>
 
-            <div>
-              <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-1">
-                Organization
-              </label>
-              {clubs.length === 0 ? (
-                // No organizations found
-                <div className="w-full px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
-                  No organizations available. Contact your administrator.
+            {hasInvitation && invitationInfo ? (
+              // Coming from invitation - show invitation info
+              <div className="p-4 rounded-xl border border-blue-200 bg-blue-50">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-600">
+                      <path d="M3 19v-8.93a2 2 0 01.89-1.664l7-4.666a2 2 0 012.22 0l7 4.666A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-blue-900 mb-1">You're joining via invitation</p>
+                    <p className="text-sm text-blue-700">
+                      <strong>{invitationInfo.team_name || invitationInfo.club_name}</strong>
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      You'll be added to this {invitationInfo.type === 'team' ? 'team' : 'club'} after signup
+                    </p>
+                  </div>
                 </div>
-              ) : clubs.length === 1 ? (
-                // Single organization - show as read-only text
-                <div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700">
-                  {clubs[0].name}
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-1">
+                    Organization
+                  </label>
+                  {clubs.length === 0 ? (
+                    // No organizations found
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
+                      No organizations available. Contact your administrator.
+                    </div>
+                  ) : clubs.length === 1 ? (
+                    // Single organization - show as read-only text
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700">
+                      {clubs[0].name}
+                    </div>
+                  ) : (
+                    // Multiple organizations - show dropdown
+                    <select
+                      id="organization"
+                      value={selectedClubId}
+                      onChange={(e) => setSelectedClubId(e.target.value)}
+                      required
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
+                      disabled={loading}
+                    >
+                      {clubs.map((club) => (
+                        <option key={club.id} value={club.id}>
+                          {club.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-              ) : (
-                // Multiple organizations - show dropdown
-                <select
-                  id="organization"
-                  value={selectedClubId}
-                  onChange={(e) => setSelectedClubId(e.target.value)}
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
-                  disabled={loading}
-                >
-                  {clubs.map((club) => (
-                    <option key={club.id} value={club.id}>
-                      {club.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
 
-            <div>
-              <label htmlFor="teamName" className="block text-sm font-medium text-gray-700 mb-1">
-                Team Name <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <input
-                id="teamName"
-                type="text"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                placeholder="e.g. U10 Academy"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
-                disabled={loading}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {selectedClubId
-                  ? 'Team will be created under your organization'
-                  : 'You can create or join teams later'}
-              </p>
-            </div>
+                <div>
+                  <label htmlFor="teamName" className="block text-sm font-medium text-gray-700 mb-1">
+                    Team Name <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="teamName"
+                    type="text"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="e.g. U10 Academy"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {selectedClubId
+                      ? 'Team will be created under your organization'
+                      : 'You can create or join teams later'}
+                  </p>
+                </div>
+              </>
+            )}
 
             <button
               type="submit"
