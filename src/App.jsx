@@ -16,14 +16,15 @@ import { InvitationManagementView } from "./components/Admin/InvitationManagemen
 import { InvitationLanding } from "./components/Auth/InvitationLanding";
 
 const DEFAULT_PLAYERS = [
-  "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
-  "Nash", "Ronnie", "Ruben", "Tyler", "Viraaj", "Zully"
+  "Lionel Messi", "Cristiano Ronaldo", "Pelé", "Diego Maradona",
+  "Zinedine Zidane", "Ronaldinho", "Thierry Henry", "Kylian Mbappé",
+  "Neymar Jr", "Mohamed Salah", "Kevin De Bruyne", "Erling Haaland"
 ];
 
 const DEFAULT_CLUBS = [
-  "Brighton Bulldogs", "Coolum FC", "Grange Thistle", "Ipswich Knights",
-  "Moreton City Excelsior", "Noosa Lions", "North Lakes United", "Pine Hills FC",
-  "Samford Rangers", "SWQ Thunder", "The Gap FC", "UQFC"
+  "Manchester United", "Real Madrid", "FC Barcelona", "Bayern Munich",
+  "Liverpool FC", "AC Milan", "Juventus", "Paris Saint-Germain",
+  "Chelsea FC", "Arsenal FC", "Borussia Dortmund", "Inter Milan"
 ];
 
 const TEAM_NAME = "North Star FC";
