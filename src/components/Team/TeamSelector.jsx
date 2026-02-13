@@ -33,7 +33,6 @@ export function TeamSelector({ onTeamCreated }) {
     setCreating(true);
     const clubId = selectedClubId || null;
 
-    console.log('Creating team:', newTeamName, 'with club:', clubId);
     const { team, error } = await createNewTeam(newTeamName.trim(), clubId);
 
     if (error) {
@@ -41,7 +40,6 @@ export function TeamSelector({ onTeamCreated }) {
       alert('Error creating team: ' + (error.message || JSON.stringify(error)));
       setCreating(false);
     } else {
-      console.log('Team created successfully:', team);
       setNewTeamName('');
       setSelectedClubId('');
       setShowCreateForm(false);

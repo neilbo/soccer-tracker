@@ -179,7 +179,6 @@ export async function createTeam(teamTitle, clubId = null) {
   }
 
   const user = await getUser();
-  console.log('Creating team - User:', user.user?.id, 'Title:', teamTitle, 'Club:', clubId);
 
   if (!user.user) {
     console.error('Not authenticated');
@@ -198,8 +197,6 @@ export async function createTeam(teamTitle, clubId = null) {
     return { team: null, error: teamError };
   }
 
-  console.log('Team created:', team);
-
   // Add user as team staff
   const { error: memberError } = await supabase
     .from('team_members')
@@ -214,7 +211,6 @@ export async function createTeam(teamTitle, clubId = null) {
     return { team: null, error: memberError };
   }
 
-  console.log('User added to team members');
   return { team, error: null };
 }
 

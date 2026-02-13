@@ -98,7 +98,6 @@ async function loadFromSupabase(teamId) {
 }
 
 async function syncNormalizedToSupabase(state, teamId) {
-  console.log('syncNormalizedToSupabase called with teamId:', teamId, 'type:', typeof teamId);
   if (!supabase || !teamId) return;
   try {
     // Update team title
@@ -115,12 +114,9 @@ async function syncNormalizedToSupabase(state, teamId) {
         name: p.name,
         sort_order: i,
       }));
-      console.log('Inserting players:', playersToInsert);
-      const { data, error } = await supabase.from("players").insert(playersToInsert);
+      const { error } = await supabase.from("players").insert(playersToInsert);
       if (error) {
         console.error('Error inserting players:', error);
-      } else {
-        console.log('Players inserted successfully:', data);
       }
     }
 
@@ -2055,7 +2051,6 @@ export default function App() {
 
         // If no Supabase data for authenticated user, start fresh
         if (!data) {
-          console.log('No Supabase data for team, starting with fresh state');
           data = {
             ...initialState,
             teamTitle: currentTeam.team_title,
@@ -2085,15 +2080,11 @@ export default function App() {
 
       // Also save to Supabase if authenticated with a team
       if (isAuthenticated && currentTeam?.team_id) {
-        console.log('Saving to Supabase with currentTeam:', currentTeam);
-        console.log('currentTeam.team_id:', currentTeam.team_id, 'type:', typeof currentTeam.team_id);
-
         // Validate team_id is a UUID (contains hyphens)
         const isValidUUID = typeof currentTeam.team_id === 'string' && currentTeam.team_id.includes('-');
 
         if (!isValidUUID) {
           console.error('Invalid team_id (not a UUID):', currentTeam.team_id);
-          console.error('Skipping save to Supabase. Please refresh the page.');
           return;
         }
 
