@@ -718,3 +718,32 @@ export async function getAllClubs() {
 
   return { clubs: data || [], error };
 }
+
+/**
+ * Add user to a club
+ * @param {string} clubId - Club UUID
+ * @param {string} userId - User UUID (optional, defaults to current user)
+ * @param {string} role - Role to assign (team_staff or club_admin)
+ * @returns {Promise<{success, error}>}
+ */
+export async function addUserToClub(clubId, userId = null, role = 'team_staff') {
+  if (!supabase) {
+    return { success: false, error: { message: "Supabase not configured" } };
+  }
+
+  const userIdToUse = userId || (await getUser()).user?.id;
+
+  if (!userIdToUse) {
+    return { success: false, error: { message: "Not authenticated" } };
+  }
+
+  const { error } = await supabase
+    .from('club_members')
+    .insert({
+      club_id: clubId,
+      user_id: userIdToUse,
+      role: role,
+    });
+
+  return { success: !error, error };
+}

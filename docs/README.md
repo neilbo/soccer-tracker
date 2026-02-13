@@ -16,9 +16,36 @@ This folder contains all documentation for the Soccer Tracker authentication and
 
 ## Utility Scripts
 
-- **[CLEAN_START.sql](./CLEAN_START.sql)** - Database reset script (drops and recreates all tables)
-  - ⚠️ WARNING: This will delete ALL data
-  - Use only for development/testing or when you need to start fresh
+### Database Setup
+
+- **[CLEAN_START.sql](./CLEAN_START.sql)** - Complete database reset and setup
+  - ⚠️ WARNING: Deletes ALL data and recreates tables
+  - Use only for development/testing or when starting fresh
+  - Creates all tables, RLS policies, functions, and triggers
+
+- **[CREATE_NORTH_STAR_FC_SIMPLE.sql](./CREATE_NORTH_STAR_FC_SIMPLE.sql)** - Quick setup (recommended)
+  - Creates only North Star FC organization
+  - Run this after CLEAN_START.sql
+  - Simple and fast
+
+- **[SETUP_NORTH_STAR_FC.sql](./SETUP_NORTH_STAR_FC.sql)** - Full setup
+  - Creates all 13 organizations (Brighton Bulldogs, Coolum FC, etc.)
+  - Only North Star FC shows in signup (frontend filtered)
+  - Other clubs available for admin operations
+
+### Recommended Setup Order
+
+```sql
+-- 1. First time setup (clean slate)
+-- Run: CLEAN_START.sql
+
+-- 2. Then create organization(s)
+-- Option A: Quick (just North Star FC)
+-- Run: CREATE_NORTH_STAR_FC_SIMPLE.sql
+
+-- Option B: Full (all clubs in database)
+-- Run: SETUP_NORTH_STAR_FC.sql
+```
 
 ## Quick Reference
 

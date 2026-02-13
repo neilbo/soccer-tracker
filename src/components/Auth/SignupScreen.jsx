@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { migrateGuestDataToTeam } from '../../supabaseClient';
+import { migrateGuestDataToTeam, getAllClubs, addUserToClub } from '../../supabaseClient';
+import { EmailVerificationScreen } from './EmailVerificationScreen';
 
 export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
   const { signUp, createNewTeam } = useAuth();
@@ -8,9 +9,29 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [teamName, setTeamName] = useState('');
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [clubs, setClubs] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [migratingData, setMigratingData] = useState(false);
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
+
+  // Load available clubs on mount
+  useEffect(() => {
+    async function loadClubs() {
+      const { clubs: clubsList, error: clubsError } = await getAllClubs();
+      if (!clubsError && clubsList) {
+        // Filter to only show North Star FC in signup
+        const filteredClubs = clubsList.filter(club => club.name === 'North Star FC');
+        setClubs(filteredClubs);
+        // Auto-select North Star FC if available
+        if (filteredClubs.length > 0) {
+          setSelectedClubId(filteredClubs[0].id);
+        }
+      }
+    }
+    loadClubs();
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -33,36 +54,23 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
       return;
     }
 
-    // Create initial team if team name provided
-    let createdTeamId = null;
-    if (teamName.trim() && user) {
-      const { team, error: teamError } = await createNewTeam(teamName.trim());
-
-      if (teamError) {
-        console.error('Error creating team:', teamError);
-        // Don't show error to user - they can create team later
-      } else if (team) {
-        createdTeamId = team.id;
-      }
+    // Store signup data for later (after email verification)
+    if (selectedClubId || teamName.trim()) {
+      localStorage.setItem('pendingSignupData', JSON.stringify({
+        clubId: selectedClubId,
+        teamName: teamName.trim(),
+        email: email,
+      }));
     }
 
-    // Migrate guest data if any exists
-    if (createdTeamId) {
-      setMigratingData(true);
-      const { success, error: migrationError } = await migrateGuestDataToTeam(createdTeamId);
+    // Show email verification screen
+    setLoading(false);
+    setShowEmailVerification(true);
+  }
 
-      if (success) {
-        console.log('Guest data migrated successfully');
-        // Clear the guest data from localStorage after successful migration
-        localStorage.removeItem('soccer-tracker-data');
-      } else if (migrationError) {
-        console.error('Error migrating guest data:', migrationError);
-        // Don't block signup - user can manually re-enter data if needed
-      }
-      setMigratingData(false);
-    }
-
-    // Success - auth state change will handle navigation
+  // Show email verification screen after signup
+  if (showEmailVerification) {
+    return <EmailVerificationScreen email={email} onBackToLogin={onSwitchToLogin} />;
   }
 
   return (
@@ -138,6 +146,39 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
             </div>
 
             <div>
+              <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-1">
+                Organization
+              </label>
+              {clubs.length === 0 ? (
+                // No organizations found
+                <div className="w-full px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
+                  No organizations available. Contact your administrator.
+                </div>
+              ) : clubs.length === 1 ? (
+                // Single organization - show as read-only text
+                <div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700">
+                  {clubs[0].name}
+                </div>
+              ) : (
+                // Multiple organizations - show dropdown
+                <select
+                  id="organization"
+                  value={selectedClubId}
+                  onChange={(e) => setSelectedClubId(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
+                  disabled={loading}
+                >
+                  {clubs.map((club) => (
+                    <option key={club.id} value={club.id}>
+                      {club.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
               <label htmlFor="teamName" className="block text-sm font-medium text-gray-700 mb-1">
                 Team Name <span className="text-gray-400 font-normal">(optional)</span>
               </label>
@@ -150,7 +191,11 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
                 disabled={loading}
               />
-              <p className="text-xs text-gray-500 mt-1">You can create or join teams later</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {selectedClubId
+                  ? 'Team will be created under your organization'
+                  : 'You can create or join teams later'}
+              </p>
             </div>
 
             <button

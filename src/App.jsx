@@ -1995,7 +1995,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
 // --- App ---
 
 export default function App() {
-  const { loading: authLoading, isAuthenticated, isGuest, currentTeam } = useAuth();
+  const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs } = useAuth();
   const { canEdit, isReadOnly } = usePermissions();
   const [showSignup, setShowSignup] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
@@ -2104,11 +2104,36 @@ export default function App() {
   // Show team selection prompt if authenticated but no team selected
   if (isAuthenticated && !currentTeam) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 shadow-lg p-6 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">No Team Selected</h2>
-          <p className="text-gray-600 mb-6">You don't have any teams yet. Create your first team to get started.</p>
-          <TeamSelector />
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header with user menu */}
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-gray-900">Soccer Tracker</h1>
+          <UserMenu />
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 shadow-lg p-8">
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">
+                <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-600">
+                  <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome!</h2>
+              <p className="text-gray-600 mb-6">Create your first team to get started</p>
+            </div>
+
+            <TeamSelector />
+
+            {userClubs.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs text-gray-500 text-center">
+                  You're a member of: <span className="font-medium text-gray-700">{userClubs.map(c => c.name).join(', ')}</span>
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2139,20 +2164,17 @@ export default function App() {
           {isAuthenticated && currentTeam ? (
             <>
               <div className="flex items-center justify-between gap-2">
-                <span className="font-bold text-gray-900 text-sm truncate flex-1">{currentTeam.team_title}</span>
-              </div>
-              <div className="flex items-center gap-2">
                 <TeamSelector />
                 <UserMenu />
               </div>
+              {isReadOnly && (
+                <div className="px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs text-amber-700 font-medium">Read-Only Access</p>
+                </div>
+              )}
             </>
           ) : (
             <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>
-          )}
-          {isReadOnly && (
-            <div className="px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-xs text-amber-700 font-medium">Read-Only Access</p>
-            </div>
           )}
           {guestMode && !isAuthenticated && (
             <button
@@ -2179,18 +2201,15 @@ export default function App() {
         <div className="md:hidden sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3">
           <div className="flex items-center justify-between">
             {isAuthenticated && currentTeam ? (
-              <>
-                <div className="flex-1 min-w-0">
-                  <span className="font-bold text-gray-900 text-sm truncate block">{currentTeam.team_title}</span>
+              <div className="flex items-center gap-2 w-full justify-between">
+                <div className="flex items-center gap-2">
+                  <TeamSelector />
                   {isReadOnly && (
                     <span className="text-xs text-amber-600 font-medium">Read-only</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <TeamSelector />
-                  <UserMenu />
-                </div>
-              </>
+                <UserMenu />
+              </div>
             ) : (
               <>
                 <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>

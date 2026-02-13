@@ -45,8 +45,92 @@ export function TeamSelector() {
     setCreating(false);
   }
 
+  // Show create team button if no current team
   if (!currentTeam) {
-    return null;
+    return (
+      <div className="w-full">
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="w-full px-5 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2"
+        >
+          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 4v16m8-8H4" />
+          </svg>
+          Create Your First Team
+        </button>
+
+        {/* Create Team Modal */}
+        {showCreateForm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Create New Team</h3>
+              <form onSubmit={handleCreateTeam} className="space-y-4">
+                <div>
+                  <label htmlFor="newTeamName" className="block text-sm font-medium text-gray-700 mb-1">
+                    Team Name
+                  </label>
+                  <input
+                    id="newTeamName"
+                    type="text"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    placeholder="e.g., U10 Academy"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    disabled={creating}
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                {userClubs.length > 0 && (
+                  <div>
+                    <label htmlFor="clubSelectModal" className="block text-sm font-medium text-gray-700 mb-1">
+                      Organization (optional)
+                    </label>
+                    <select
+                      id="clubSelectModal"
+                      value={selectedClubId}
+                      onChange={(e) => setSelectedClubId(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                      disabled={creating}
+                    >
+                      <option value="">Independent Team</option>
+                      {userClubs.map((club) => (
+                        <option key={club.id} value={club.id}>
+                          {club.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setNewTeamName('');
+                      setSelectedClubId('');
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition"
+                    disabled={creating}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 rounded-xl text-white bg-blue-600 hover:bg-blue-700 font-medium transition disabled:opacity-50"
+                    disabled={creating || !newTeamName.trim()}
+                  >
+                    {creating ? 'Creating...' : 'Create Team'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (

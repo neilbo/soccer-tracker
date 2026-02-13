@@ -11,6 +11,7 @@ import {
   isSuperAdmin,
   getUserTeamRole,
   getUserClubs,
+  addUserToClub,
 } from '../supabaseClient';
 
 // Create Auth Context
@@ -128,8 +129,38 @@ export function AuthProvider({ children }) {
       // Check if super admin
       const { isAdmin } = await isSuperAdmin();
       setIsSuperAdminFlag(isAdmin);
+
+      // Handle pending signup data (team/club setup after email verification)
+      await completePendingSignup(userTeams);
     } catch (error) {
       console.error('Error loading user data:', error);
+    }
+  }
+
+  async function completePendingSignup(existingTeams) {
+    try {
+      const pendingDataStr = localStorage.getItem('pendingSignupData');
+      if (!pendingDataStr) return;
+
+      const pendingData = JSON.parse(pendingDataStr);
+
+      // Add user to club if specified
+      if (pendingData.clubId) {
+        await addUserToClub(pendingData.clubId);
+        await loadUserClubsData(); // Refresh clubs
+      }
+
+      // Create team if specified and user doesn't have any teams yet
+      if (pendingData.teamName && existingTeams.length === 0) {
+        const clubId = pendingData.clubId || null;
+        await createTeam(pendingData.teamName, clubId);
+        await refreshTeams(); // Refresh teams
+      }
+
+      // Clear pending data
+      localStorage.removeItem('pendingSignupData');
+    } catch (error) {
+      console.error('Error completing pending signup:', error);
     }
   }
 
