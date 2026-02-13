@@ -25,6 +25,12 @@ const formatTime = (seconds) => {
 const formatDate = (d) =>
   new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 
+const formatPosition = (position) => {
+  if (!position || !position.role) return "-";
+  if (position.role === "GK") return "GK";
+  return position.side ? `${position.role}-${position.side}` : position.role;
+};
+
 // --- Storage ---
 
 function loadState() {
@@ -122,6 +128,8 @@ async function syncNormalizedToSupabase(state) {
             assists: p.assists ?? 0,
             notes: p.notes || "",
             events: p.events || [],
+            position_role: p.position?.role || null,
+            position_side: p.position?.side || null,
           }))
         );
       }
@@ -164,13 +172,34 @@ function reducer(state, action) {
       return { ...state, view: action.view };
     case "SET_TEAM_TITLE":
       return { ...state, teamTitle: action.title };
-    case "LOAD_SAVED":
+    case "LOAD_SAVED": {
+      // Migrate old data: ensure all match players have position field
+      const migratedData = { ...action.data };
+      if (migratedData.matches) {
+        migratedData.matches = migratedData.matches.map((m) => ({
+          ...m,
+          players: m.players?.map((p) => ({
+            ...p,
+            position: p.position || { role: null, side: null },
+          })) || [],
+        }));
+      }
+      if (migratedData.currentMatch) {
+        migratedData.currentMatch = {
+          ...migratedData.currentMatch,
+          players: migratedData.currentMatch.players?.map((p) => ({
+            ...p,
+            position: p.position || { role: null, side: null },
+          })) || [],
+        };
+      }
       return {
         ...state,
-        ...action.data,
+        ...migratedData,
         loaded: true,
-        view: action.data.currentMatch?.status === "live" ? "match" : "dashboard",
+        view: migratedData.currentMatch?.status === "live" ? "match" : "dashboard",
       };
+    }
     case "ADD_SQUAD_PLAYER":
       return {
         ...state,
@@ -222,6 +251,7 @@ function reducer(state, action) {
           assists: 0,
           notes: "",
           events: [],
+          position: { role: null, side: null },
         })),
         status: "setup",
         teamGoals: 0,
@@ -254,6 +284,34 @@ function reducer(state, action) {
         ...state.currentMatch,
         players: state.currentMatch.players.map((p) =>
           p.id === action.playerId ? { ...p, notes: action.notes } : p
+        ),
+      };
+      return { ...state, currentMatch: match, matches: state.matches.map((m) => (m.id === match.id ? match : m)) };
+    }
+    case "UPDATE_PLAYER_POSITION": {
+      const player = state.currentMatch.players.find((p) => p.id === action.playerId);
+      const oldPosition = player.position;
+      const newPosition = action.position;
+      const mt = state.currentMatch.matchSeconds;
+      const isLive = state.currentMatch.status === "live";
+
+      // Track position change in events if match is live and position actually changed
+      const shouldTrackChange = isLive &&
+        (oldPosition.role !== newPosition.role || oldPosition.side !== newPosition.side) &&
+        (oldPosition.role !== null || newPosition.role !== null);
+
+      const match = {
+        ...state.currentMatch,
+        players: state.currentMatch.players.map((p) =>
+          p.id === action.playerId
+            ? {
+                ...p,
+                position: newPosition,
+                events: shouldTrackChange
+                  ? [...p.events, { type: "position", at: mt, from: oldPosition, to: newPosition }]
+                  : p.events
+              }
+            : p
         ),
       };
       return { ...state, currentMatch: match, matches: state.matches.map((m) => (m.id === match.id ? match : m)) };
@@ -395,6 +453,7 @@ function reducer(state, action) {
             assists: 0,
             notes: "",
             events: [],
+            position: { role: null, side: null },
           },
         ],
       };
@@ -614,6 +673,84 @@ function downloadCSV(content, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// --- PositionSelector ---
+
+function PositionSelector({ position, onChange }) {
+  const { role, side } = position || { role: null, side: null };
+  const [expandedRole, setExpandedRole] = useState(null);
+  const roles = ['GK', 'DEF', 'MID', 'FWD'];
+  const sides = ['L', 'C', 'R'];
+
+  const handleRoleClick = (newRole) => {
+    if (newRole === 'GK') {
+      // GK has no sides, just set it directly
+      onChange({ role: newRole, side: null });
+      setExpandedRole(null);
+    } else {
+      // For DEF, MID, FWD - toggle expansion
+      if (expandedRole === newRole) {
+        setExpandedRole(null);
+      } else {
+        setExpandedRole(newRole);
+      }
+    }
+  };
+
+  const handleSideChange = (newSide) => {
+    onChange({ role: expandedRole, side: newSide });
+    setExpandedRole(null);
+  };
+
+  const formatRoleDisplay = (r) => {
+    if (role === r && r !== 'GK' && side) {
+      return `${r}-${side}`;
+    }
+    return r;
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1.5">
+        {roles.map((r) => {
+          const isSelected = role === r;
+          const hasChevron = r !== 'GK';
+          const isExpanded = expandedRole === r;
+
+          return (
+            <button
+              key={r}
+              onClick={() => handleRoleClick(r)}
+              className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1 ${
+                isSelected
+                  ? 'bg-blue-600 text-white border-2 border-blue-600'
+                  : 'bg-white text-blue-600 border-2 border-blue-500 hover:bg-blue-50'
+              }`}
+            >
+              <span>{formatRoleDisplay(r)}</span>
+              {hasChevron && (
+                <Icon name={isExpanded ? "up" : "down"} size={12} className="shrink-0" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {expandedRole && (
+        <div className="flex gap-1.5 pl-2">
+          {sides.map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSideChange(s)}
+              className="flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition bg-white text-blue-500 border-2 border-blue-400 hover:bg-blue-50"
+            >
+              {s === 'L' ? 'Left' : s === 'C' ? 'Centre' : 'Right'}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // --- ComboSelect ---
@@ -1099,19 +1236,27 @@ function MatchSetup({ state, dispatch }) {
         </div>
         <div className="space-y-2">
           {match.players.map((p) => (
-            <div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl transition ${p.starting ? "bg-blue-50 border border-blue-200" : "bg-gray-50 border border-transparent"}`}>
-              <button onClick={() => dispatch({ type: "TOGGLE_STARTING", playerId: p.id })}
-                className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition ${p.starting ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300"}`}>
-                {p.starting && <Icon name="check" size={14} />}
-              </button>
-              {editingId === p.id ? (
-                <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} autoFocus
-                  className="flex-1 px-2 py-1 rounded-lg border border-blue-300 outline-none text-sm" />
-              ) : (
-                <span className="flex-1 text-sm font-medium text-gray-800 cursor-pointer" onClick={() => startEditing(p)}>{p.name}</span>
-              )}
-              <Btn variant="ghost" size="xs" onClick={() => startEditing(p)}><Icon name="edit" /></Btn>
-              <Btn variant="ghost" size="xs" onClick={() => dispatch({ type: "REMOVE_MATCH_PLAYER", playerId: p.id })}><Icon name="x" /></Btn>
+            <div key={p.id} className={`flex flex-col gap-2 p-3 rounded-xl transition ${p.starting ? "bg-blue-50 border border-blue-200" : "bg-gray-50 border border-transparent"}`}>
+              <div className="flex items-center gap-3">
+                <button onClick={() => dispatch({ type: "TOGGLE_STARTING", playerId: p.id })}
+                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition ${p.starting ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300"}`}>
+                  {p.starting && <Icon name="check" size={14} />}
+                </button>
+                {editingId === p.id ? (
+                  <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onBlur={saveEdit} onKeyDown={(e) => e.key === "Enter" && saveEdit()} autoFocus
+                    className="flex-1 px-2 py-1 rounded-lg border border-blue-300 outline-none text-sm" />
+                ) : (
+                  <span className="flex-1 text-sm font-medium text-gray-800 cursor-pointer" onClick={() => startEditing(p)}>{p.name}</span>
+                )}
+                <Btn variant="ghost" size="xs" onClick={() => startEditing(p)}><Icon name="edit" /></Btn>
+                <Btn variant="ghost" size="xs" onClick={() => dispatch({ type: "REMOVE_MATCH_PLAYER", playerId: p.id })}><Icon name="x" /></Btn>
+              </div>
+              <div className="pl-9">
+                <PositionSelector
+                  position={p.position}
+                  onChange={(position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position })}
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -1127,6 +1272,7 @@ function MatchSetup({ state, dispatch }) {
 function LiveMatch({ state, dispatch }) {
   const match = state.currentMatch;
   const [expanded, setExpanded] = useState(null);
+  const [expandedBench, setExpandedBench] = useState(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const onField = match.players.filter((p) => p.onField);
   const bench = match.players.filter((p) => !p.onField);
@@ -1184,7 +1330,14 @@ function LiveMatch({ state, dispatch }) {
             <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-3">
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900 truncate">{p.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-gray-900 truncate">{p.name}</span>
+                    {p.position?.role && (
+                      <span className="shrink-0 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                        {formatPosition(p.position)}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-lg font-mono font-bold text-blue-600 tabular-nums">{formatTime(p.seconds)}</div>
                 </div>
                 <div className="flex gap-1.5">
@@ -1216,6 +1369,13 @@ function LiveMatch({ state, dispatch }) {
                       </div>
                     ))}
                   </div>
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Position</div>
+                    <PositionSelector
+                      position={p.position}
+                      onChange={(position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position })}
+                    />
+                  </div>
                   {p.events.length > 0 && (
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Stints</div>
@@ -1243,12 +1403,34 @@ function LiveMatch({ state, dispatch }) {
           <h2 className="font-semibold text-gray-900 text-sm mb-2 flex items-center gap-1">🪑 Bench ({bench.length})</h2>
           <div className="space-y-2">
             {bench.map((p) => (
-              <div key={p.id} className="bg-gray-50 rounded-xl border border-gray-200 p-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-700 truncate">{p.name}</div>
-                  <div className="text-sm font-mono text-gray-400 tabular-nums">{formatTime(p.seconds)}</div>
+              <div key={p.id} className="bg-gray-50 rounded-xl border border-gray-200 p-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm text-gray-700 truncate">{p.name}</span>
+                      {p.position?.role && (
+                        <span className="shrink-0 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                          {formatPosition(p.position)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-mono text-gray-400 tabular-nums">{formatTime(p.seconds)}</div>
+                  </div>
+                  <Btn variant="primary" size="sm" onClick={() => dispatch({ type: "SUB_ON", playerId: p.id })}>Sub On</Btn>
+                  <button onClick={() => setExpandedBench(expandedBench === p.id ? null : p.id)}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${expandedBench === p.id ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                    <Icon name={expandedBench === p.id ? "up" : "down"} />
+                  </button>
                 </div>
-                <Btn variant="primary" size="sm" onClick={() => dispatch({ type: "SUB_ON", playerId: p.id })}>Sub On</Btn>
+                {expandedBench === p.id && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-1">Position</div>
+                    <PositionSelector
+                      position={p.position}
+                      onChange={(position) => dispatch({ type: "UPDATE_PLAYER_POSITION", playerId: p.id, position })}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1292,6 +1474,7 @@ function MatchEdit({ state, dispatch }) {
   const [editGoals, setEditGoals] = useState(0);
   const [editAssists, setEditAssists] = useState(0);
   const [editNotes, setEditNotes] = useState("");
+  const [editPosition, setEditPosition] = useState({ role: null, side: null });
   const goBack = () => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" });
   const totalMatchMins = isCompleted ? Math.round(match.matchSeconds / 60) : 0;
   const clubNames = state.clubs.map((c) => c.name);
@@ -1370,6 +1553,7 @@ function MatchEdit({ state, dispatch }) {
     setEditGoals(player.goals);
     setEditAssists(player.assists);
     setEditNotes(player.notes || "");
+    setEditPosition(player.position || { role: null, side: null });
     setEditDrawerOpen(true);
   };
 
@@ -1388,6 +1572,16 @@ function MatchEdit({ state, dispatch }) {
       assists: editAssists,
       notes: editNotes,
     });
+
+    // Update position if changed
+    const oldPos = editingPlayer.position || { role: null, side: null };
+    if (oldPos.role !== editPosition.role || oldPos.side !== editPosition.side) {
+      dispatch({
+        type: "UPDATE_PLAYER_POSITION",
+        playerId: editingPlayer.id,
+        position: editPosition,
+      });
+    }
 
     closeEditDrawer();
   };
@@ -1482,6 +1676,7 @@ function MatchEdit({ state, dispatch }) {
                       {sortKey === "name" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
                     </div>
                   </th>
+                  <th className="p-3 text-center">Pos</th>
                   <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("seconds")}>
                     <div className="flex items-center justify-center gap-1">
                       On
@@ -1508,6 +1703,7 @@ function MatchEdit({ state, dispatch }) {
                   return (
                     <tr key={p.id} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/50' : 'bg-white'} hover:bg-blue-100 cursor-pointer transition`} onClick={() => openEditDrawer(p)}>
                       <td className="p-3 font-medium">{p.name}</td>
+                      <td className="p-3 text-center text-xs font-semibold text-gray-600">{formatPosition(p.position)}</td>
                       <td className="p-3 text-center font-mono text-emerald-600">{minsOn}′</td>
                       <td className="p-3 text-center font-mono text-gray-400">{minsOff}′</td>
                       <td className="p-3 text-center">{p.goals}</td>
@@ -1541,6 +1737,13 @@ function MatchEdit({ state, dispatch }) {
                     <>
                       <div>
                         <h3 className="font-medium text-lg text-gray-900 mb-4">{editingPlayer.name}</h3>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                        <PositionSelector
+                          position={editPosition}
+                          onChange={setEditPosition}
+                        />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Minutes On Field</label>
@@ -1633,6 +1836,7 @@ function MatchEdit({ state, dispatch }) {
                   <div className="overflow-y-auto divide-y divide-gray-100 p-4">
                     {sorted.filter((p) => p.events.length > 0).map((p) => {
                       const stints = getPlayerStints(p, match.matchSeconds);
+                      const positionChanges = p.events.filter((e) => e.type === "position");
                       return (
                         <div key={p.id} className="py-4 first:pt-0">
                           <div className="font-medium text-sm text-gray-900 mb-2">{p.name}</div>
@@ -1648,6 +1852,15 @@ function MatchEdit({ state, dispatch }) {
                               <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-mono">{formatTime(s.on)} → {formatTime(s.off)}</span>
                             ))}
                           </div>
+                          {positionChanges.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {positionChanges.map((change, i) => (
+                                <span key={i} className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-medium">
+                                  {formatTime(change.at)}: {formatPosition(change.from)} → {formatPosition(change.to)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
