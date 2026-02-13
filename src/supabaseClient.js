@@ -725,6 +725,45 @@ export async function getAllClubs() {
 }
 
 /**
+ * Update club name (super admin only)
+ * @param {string} clubId - Club UUID
+ * @param {string} newName - New club name
+ * @returns {Promise<{club, error}>}
+ */
+export async function updateClub(clubId, newName) {
+  if (!supabase) {
+    return { club: null, error: { message: "Supabase not configured" } };
+  }
+
+  const { data, error } = await supabase
+    .from('clubs')
+    .update({ name: newName })
+    .eq('id', clubId)
+    .select()
+    .single();
+
+  return { club: data, error };
+}
+
+/**
+ * Delete club (super admin only)
+ * @param {string} clubId - Club UUID
+ * @returns {Promise<{success, error}>}
+ */
+export async function deleteClub(clubId) {
+  if (!supabase) {
+    return { success: false, error: { message: "Supabase not configured" } };
+  }
+
+  const { error } = await supabase
+    .from('clubs')
+    .delete()
+    .eq('id', clubId);
+
+  return { success: !error, error };
+}
+
+/**
  * Add user to a club
  * @param {string} clubId - Club UUID
  * @param {string} userId - User UUID (optional, defaults to current user)

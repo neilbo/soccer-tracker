@@ -313,6 +313,7 @@ export function usePermissions() {
   const canView = isSuperAdmin || currentTeam?.role === 'club_admin' || currentTeam?.role === 'team_staff';
   const canExport = true; // All authenticated users can export
   const isReadOnly = currentTeam?.role === 'club_admin' && !isSuperAdmin;
+  const canCreateTeam = isSuperAdmin; // Only super admins can create teams
 
   return {
     canEdit,
@@ -320,6 +321,7 @@ export function usePermissions() {
     canExport,
     isReadOnly,
     isSuperAdmin,
+    canCreateTeam,
     role: currentTeam?.role,
   };
 }

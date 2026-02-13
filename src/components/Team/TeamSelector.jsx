@@ -4,7 +4,7 @@ import { InvitationManager } from './InvitationManager';
 
 export function TeamSelector({ onTeamCreated }) {
   const { currentTeam, teams, selectTeam, createNewTeam, userClubs } = useAuth();
-  const { canEdit } = usePermissions();
+  const { canEdit, canCreateTeam } = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showInvitations, setShowInvitations] = useState(false);
@@ -57,6 +57,19 @@ export function TeamSelector({ onTeamCreated }) {
 
   // Show create team button if no current team
   if (!currentTeam) {
+    // If user can't create teams, show message instead
+    if (!canCreateTeam) {
+      return (
+        <div className="w-full">
+          <div className="px-5 py-4 rounded-xl bg-gray-50 border border-gray-200 text-center">
+            <p className="text-sm text-gray-600">
+              No team assigned yet. Please contact your administrator.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="w-full">
         <button
@@ -214,15 +227,17 @@ export function TeamSelector({ onTeamCreated }) {
                     Invite Members
                   </button>
                 )}
-                <button
-                  onClick={() => setShowCreateForm(true)}
-                  className="w-full px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 transition flex items-center justify-center gap-2"
-                >
-                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 4v16m8-8H4" />
-                  </svg>
-                  Create New Team
-                </button>
+                {canCreateTeam && (
+                  <button
+                    onClick={() => setShowCreateForm(true)}
+                    className="w-full px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 transition flex items-center justify-center gap-2"
+                  >
+                    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create New Team
+                  </button>
+                )}
               </div>
             </>
           ) : (

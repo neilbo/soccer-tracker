@@ -8,6 +8,7 @@ import { TeamSelector } from "./components/Team/TeamSelector";
 import { UserMenu } from "./components/Auth/UserMenu";
 import { PendingInvitations } from "./components/Team/PendingInvitations";
 import { PendingClubInvitations } from "./components/Club/PendingClubInvitations";
+import { OrganizationManager } from "./components/Organization/OrganizationManager";
 
 const DEFAULT_PLAYERS = [
   "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
@@ -564,6 +565,7 @@ const Icon = ({ name, size = 24 }) => {
     up: <path d="M5 15l7-7 7 7" />,
     down: <path d="M19 9l-7 7-7-7" />,
     note: <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-7 0l9-9m0 0h-6m6 0v6" />,
+    building: <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2012,7 +2014,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
 // --- App ---
 
 export default function App() {
-  const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs } = useAuth();
+  const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs, isSuperAdmin } = useAuth();
   const { canEdit, isReadOnly } = usePermissions();
   const [showSignup, setShowSignup] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
@@ -2020,6 +2022,15 @@ export default function App() {
   const [justCreatedTeam, setJustCreatedTeam] = useState(false);
   const intervalRef = useRef(null);
   const saveTimeoutRef = useRef(null);
+
+  // Handle guest sign out
+  function handleGuestSignOut() {
+    if (confirm('Are you sure you want to sign out? Your guest data will be deleted.')) {
+      localStorage.clear();
+      setGuestMode(false);
+      dispatch({ type: "LOAD_SAVED", data: initialState });
+    }
+  }
 
   // Navigate to squad page when team is created
   useEffect(() => {
@@ -2107,6 +2118,7 @@ export default function App() {
     { view: "new-match", icon: "plus", label: "New Match" },
     { view: "squad", icon: "users", label: "Team" },
     { view: "clubs", icon: "trophy", label: "Clubs" },
+    ...(isSuperAdmin ? [{ view: "organizations", icon: "building", label: "Organizations" }] : []),
   ];
 
   // Show loading screen while auth is initializing
@@ -2231,12 +2243,23 @@ export default function App() {
             <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>
           )}
           {guestMode && !isAuthenticated && (
-            <button
-              onClick={() => setGuestMode(false)}
-              className="w-full px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition"
-            >
-              Sign up to sync →
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => setGuestMode(false)}
+                className="w-full px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition"
+              >
+                Sign up to sync →
+              </button>
+              <button
+                onClick={handleGuestSignOut}
+                className="w-full px-3 py-2 text-red-600 rounded-lg text-xs font-medium hover:bg-red-50 transition flex items-center justify-center gap-1"
+              >
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign Out (Clear Data)
+              </button>
+            </div>
           )}
         </div>
         <nav className="p-3 flex flex-col gap-1 flex-1">
@@ -2266,14 +2289,25 @@ export default function App() {
               </div>
             ) : (
               <>
-                <span className="font-bold text-gray-900 text-lg">{state.teamTitle}</span>
+                <span className="font-bold text-gray-900 text-lg truncate">{state.teamTitle}</span>
                 {guestMode && !isAuthenticated && (
-                  <button
-                    onClick={() => setGuestMode(false)}
-                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"
-                  >
-                    Sign Up
-                  </button>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => setGuestMode(false)}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium whitespace-nowrap"
+                    >
+                      Sign Up
+                    </button>
+                    <button
+                      onClick={handleGuestSignOut}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Sign Out (Clear Data)"
+                    >
+                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                    </button>
+                  </div>
                 )}
               </>
             )}
@@ -2291,6 +2325,7 @@ export default function App() {
           {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "squad" && <SquadView state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "clubs" && <ClubsView state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "organizations" && isSuperAdmin && <OrganizationManager />}
           {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} canEdit={canEdit} />}
