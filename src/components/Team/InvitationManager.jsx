@@ -12,6 +12,8 @@ export function InvitationManager({ teamId, onClose }) {
   const [role, setRole] = useState('team_staff');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [invitationLink, setInvitationLink] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadInvitations();
@@ -54,7 +56,12 @@ export function InvitationManager({ teamId, onClose }) {
       return;
     }
 
-    // Success
+    // Success - generate invitation link
+    if (invitation?.token) {
+      const link = `${window.location.origin}/invite/${invitation.token}`;
+      setInvitationLink(link);
+    }
+
     setEmail('');
     setRole('team_staff');
     await loadInvitations();
@@ -65,6 +72,16 @@ export function InvitationManager({ teamId, onClose }) {
     const { success } = await cancelInvitation(invitationId);
     if (success) {
       await loadInvitations();
+    }
+  }
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(invitationLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
     }
   }
 
@@ -157,6 +174,45 @@ export function InvitationManager({ teamId, onClose }) {
                 {sending ? 'Sending...' : 'Send Invitation'}
               </button>
             </form>
+
+            {/* Show invitation link after creation */}
+            {invitationLink && (
+              <div className="mt-4 pt-4 border-t border-blue-200">
+                <div className="mb-2">
+                  <p className="text-sm font-medium text-gray-900 mb-1">Invitation Link Created!</p>
+                  <p className="text-xs text-gray-600">Copy and share this link with the invitee via email, Slack, or any messaging app.</p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={invitationLink}
+                    readOnly
+                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-mono text-gray-700"
+                  />
+                  <button
+                    onClick={handleCopyLink}
+                    className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition flex items-center gap-2"
+                  >
+                    {copied ? (
+                      <>
+                        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M20 6L9 17l-5-5" />
+                        </svg>
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                        </svg>
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Pending invitations */}

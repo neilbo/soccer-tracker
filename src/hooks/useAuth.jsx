@@ -111,7 +111,23 @@ export function AuthProvider({ children }) {
         return;
       }
 
+      console.log('Loaded user teams:', userTeams);
       setTeams(userTeams || []);
+
+      // Check if user just joined a team via invitation
+      const justJoinedTeamId = sessionStorage.getItem('justJoinedTeamId');
+      if (justJoinedTeamId) {
+        const joinedTeam = userTeams.find(t => t.team_id === justJoinedTeamId);
+        if (joinedTeam) {
+          console.log('Auto-selecting just-joined team:', joinedTeam);
+          setCurrentTeam(joinedTeam);
+          sessionStorage.removeItem('justJoinedTeamId');
+          return; // Skip normal team selection logic
+        } else {
+          console.warn('Just joined team not found in user teams:', justJoinedTeamId);
+          sessionStorage.removeItem('justJoinedTeamId');
+        }
+      }
 
       // Set current team (from localStorage or first team)
       const savedTeamId = localStorage.getItem('currentTeamId');

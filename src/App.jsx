@@ -7,11 +7,13 @@ import { SignupScreen } from "./components/Auth/SignupScreen";
 import { TeamSelector } from "./components/Team/TeamSelector";
 import { UserMenu } from "./components/Auth/UserMenu";
 import { PendingInvitations } from "./components/Team/PendingInvitations";
+import { InvitationManager } from "./components/Team/InvitationManager";
 import { PendingClubInvitations } from "./components/Club/PendingClubInvitations";
 import { OrganizationManager } from "./components/Organization/OrganizationManager";
 import { SystemStatsView } from "./components/Admin/SystemStatsView";
 import { UserManagementView } from "./components/Admin/UserManagementView";
 import { InvitationManagementView } from "./components/Admin/InvitationManagementView";
+import { InvitationLanding } from "./components/Auth/InvitationLanding";
 
 const DEFAULT_PLAYERS = [
   "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
@@ -876,6 +878,8 @@ function SquadView({ state, dispatch, canEdit = true }) {
   const [editVal, setEditVal] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleVal, setTitleVal] = useState(state.teamTitle);
+  const [showInvitations, setShowInvitations] = useState(false);
+  const { currentTeam } = useAuth();
   const startEditing = (p) => { setEditingId(p.id); setEditVal(p.name); };
   const saveEdit = () => { if (editVal.trim()) dispatch({ type: "RENAME_SQUAD_PLAYER", playerId: editingId, name: editVal.trim() }); setEditingId(null); };
   const addPlayer = () => { if (newName.trim()) { dispatch({ type: "ADD_SQUAD_PLAYER", name: newName.trim() }); setNewName(""); } };
@@ -898,7 +902,20 @@ function SquadView({ state, dispatch, canEdit = true }) {
           )}
           {!editingTitle && canEdit && <button onClick={() => { setTitleVal(state.teamTitle); setEditingTitle(true); }} className="text-gray-400 hover:text-gray-600 transition"><Icon name="edit" size={16} /></button>}
         </div>
-        <span className="text-sm text-gray-500 font-medium">{state.squad.length} players</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-500 font-medium">{state.squad.length} players</span>
+          {canEdit && currentTeam?.team_id && (
+            <button
+              onClick={() => setShowInvitations(true)}
+              className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2"
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7.5a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6" />
+              </svg>
+              Invite Members
+            </button>
+          )}
+        </div>
       </div>
       {canEdit && (
         <div className="bg-white rounded-2xl border border-gray-200 p-4">
@@ -940,6 +957,14 @@ function SquadView({ state, dispatch, canEdit = true }) {
           <div className="p-8 text-center text-gray-400"><Icon name="users" size={40} /><p className="mt-2">No players in squad. Add some above!</p></div>
         )}
       </div>
+
+      {/* Invitation Manager Modal */}
+      {showInvitations && currentTeam?.team_id && (
+        <InvitationManager
+          teamId={currentTeam.team_id}
+          onClose={() => setShowInvitations(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2024,7 +2049,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
 // --- App ---
 
 export default function App() {
-  const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs, isSuperAdmin } = useAuth();
+  const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs, isSuperAdmin, user, refreshTeams } = useAuth();
   const { canEdit, isReadOnly } = usePermissions();
   const [showSignup, setShowSignup] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
@@ -2032,6 +2057,34 @@ export default function App() {
   const [justCreatedTeam, setJustCreatedTeam] = useState(false);
   const intervalRef = useRef(null);
   const saveTimeoutRef = useRef(null);
+
+  // Check for invitation token in URL
+  const [invitationToken, setInvitationToken] = useState(null);
+  const [showInvitation, setShowInvitation] = useState(false);
+
+  // Check for invitation token on mount
+  useEffect(() => {
+    // Check URL for /invite/:token pattern
+    const path = window.location.pathname;
+    const inviteMatch = path.match(/^\/invite\/([^\/]+)$/);
+
+    if (inviteMatch) {
+      const token = inviteMatch[1];
+      setInvitationToken(token);
+      setShowInvitation(true);
+      // Clean URL without page reload
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+
+    // Check sessionStorage for pending invitation after login
+    const pendingToken = sessionStorage.getItem('pending_invitation_token');
+    if (pendingToken && isAuthenticated) {
+      setInvitationToken(pendingToken);
+      setShowInvitation(true);
+      sessionStorage.removeItem('pending_invitation_token');
+    }
+  }, [isAuthenticated]);
 
   // Handle guest sign out
   function handleGuestSignOut() {
@@ -2144,6 +2197,39 @@ export default function App() {
           <p className="text-sm text-gray-500">Loading...</p>
         </div>
       </div>
+    );
+  }
+
+  // Show invitation landing page if there's an invitation token
+  if (showInvitation && invitationToken) {
+    return (
+      <InvitationLanding
+        token={invitationToken}
+        user={user}
+        onAcceptSuccess={async () => {
+          setShowInvitation(false);
+          setInvitationToken(null);
+
+          // Wait a moment for database transaction to complete
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Refresh teams to pick up newly joined team
+          const { teams } = await refreshTeams();
+
+          // If teams were found, the user should now see their team
+          // Reload to ensure all data is fresh
+          window.location.reload();
+        }}
+        onDecline={() => {
+          setShowInvitation(false);
+          setInvitationToken(null);
+        }}
+        onLoginRequired={() => {
+          // Show signup/login screen
+          setShowInvitation(false);
+          // Token is already in sessionStorage, will be picked up after auth
+        }}
+      />
     );
   }
 

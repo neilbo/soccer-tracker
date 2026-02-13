@@ -469,6 +469,73 @@ export async function getMyInvitations() {
 }
 
 /**
+ * Get invitation details by token (for public invitation links)
+ * Uses RPC function to bypass RLS and get team/club name and inviter name
+ * @param {string} token - Invitation token
+ * @returns {Promise<{invitation, error}>}
+ */
+export async function getInvitationByToken(token) {
+  if (!supabase) {
+    return { invitation: null, error: { message: "Supabase not configured" } };
+  }
+
+  const { data, error } = await supabase
+    .rpc('get_invitation_by_token', { invitation_token: token });
+
+  if (error) {
+    return { invitation: null, error };
+  }
+
+  // Check if the RPC returned an error object
+  if (data?.error) {
+    return { invitation: null, error: { message: data.error } };
+  }
+
+  return { invitation: data, error: null };
+}
+
+/**
+ * Accept an invitation by token (works for both team and club invitations)
+ * @param {string} token - Invitation token
+ * @returns {Promise<{success, type, teamId, clubId, role, error}>}
+ */
+export async function acceptInvitationByToken(token) {
+  if (!supabase) {
+    return { success: false, type: null, teamId: null, clubId: null, role: null, error: { message: "Supabase not configured" } };
+  }
+
+  // First check if it's a team invitation
+  const teamResult = await acceptInvitation(token);
+  if (teamResult.success) {
+    return {
+      ...teamResult,
+      type: 'team'
+    };
+  }
+
+  // If team invitation failed, try club invitation
+  const clubResult = await acceptClubInvitation(token);
+  if (clubResult.success) {
+    return {
+      ...clubResult,
+      type: 'club',
+      teamId: null,
+      role: null
+    };
+  }
+
+  // Both failed
+  return {
+    success: false,
+    type: null,
+    teamId: null,
+    clubId: null,
+    role: null,
+    error: clubResult.error || teamResult.error
+  };
+}
+
+/**
  * Accept an invitation
  * @param {string} token - Invitation token
  * @returns {Promise<{success, teamId, role, error}>}
@@ -491,6 +558,35 @@ export async function acceptInvitation(token) {
     role: data?.role,
     error: data?.error ? { message: data.error } : null,
   };
+}
+
+/**
+ * Decline an invitation by token
+ * @param {string} token - Invitation token
+ * @returns {Promise<{success, error}>}
+ */
+export async function declineInvitationByToken(token) {
+  if (!supabase) {
+    return { success: false, error: { message: "Supabase not configured" } };
+  }
+
+  // Try team invitation first
+  const { error: teamError } = await supabase
+    .from('invitations')
+    .update({ status: 'declined' })
+    .eq('token', token);
+
+  if (!teamError) {
+    return { success: true, error: null };
+  }
+
+  // Try club invitation
+  const { error: clubError } = await supabase
+    .from('club_invitations')
+    .update({ status: 'declined' })
+    .eq('token', token);
+
+  return { success: !clubError, error: clubError || teamError };
 }
 
 /**
