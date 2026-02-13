@@ -9,6 +9,7 @@ import { UserMenu } from "./components/Auth/UserMenu";
 import { PendingInvitations } from "./components/Team/PendingInvitations";
 import { PendingClubInvitations } from "./components/Club/PendingClubInvitations";
 import { OrganizationManager } from "./components/Organization/OrganizationManager";
+import { AdminDashboard } from "./components/Admin/AdminDashboard";
 
 const DEFAULT_PLAYERS = [
   "Apaarwar", "Ethan", "Jaibir (JB)", "Jacob", "Jake", "Liam",
@@ -566,6 +567,7 @@ const Icon = ({ name, size = 24 }) => {
     down: <path d="M19 9l-7 7-7-7" />,
     note: <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-7 0l9-9m0 0h-6m6 0v6" />,
     building: <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />,
+    shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2115,10 +2117,10 @@ export default function App() {
 
   const navItems = [
     { view: "dashboard", icon: "home", label: "Dashboard" },
-    { view: "new-match", icon: "plus", label: "New Match" },
+    ...(!isSuperAdmin ? [{ view: "new-match", icon: "plus", label: "New Match" }] : []),
     { view: "squad", icon: "users", label: "Team" },
     { view: "clubs", icon: "trophy", label: "Clubs" },
-    ...(isSuperAdmin ? [{ view: "organizations", icon: "building", label: "Organizations" }] : []),
+    ...(isSuperAdmin ? [{ view: "admin", icon: "shield", label: "Admin" }] : []),
   ];
 
   // Show loading screen while auth is initializing
@@ -2325,7 +2327,7 @@ export default function App() {
           {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "squad" && <SquadView state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "clubs" && <ClubsView state={state} dispatch={dispatch} canEdit={canEdit} />}
-          {state.view === "organizations" && isSuperAdmin && <OrganizationManager />}
+          {state.view === "admin" && isSuperAdmin && <AdminDashboard />}
           {state.view === "setup" && <MatchSetup state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "match" && <LiveMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "match-edit" && <MatchEdit state={state} dispatch={dispatch} canEdit={canEdit} />}

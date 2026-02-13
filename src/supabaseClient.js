@@ -791,3 +791,46 @@ export async function addUserToClub(clubId, userId = null, role = 'team_staff') 
 
   return { success: !error, error };
 }
+
+// ==================== ADMIN FUNCTIONS ====================
+// Super Admin only - manage users, invitations, and system stats
+
+export async function getAllUsers() {
+  const { data, error } = await supabase.rpc('get_all_users_admin');
+  return { users: data || [], error };
+}
+
+export async function getAllInvitations() {
+  const { data, error } = await supabase.rpc('get_all_invitations_admin');
+  return { invitations: data || [], error };
+}
+
+export async function removeUserFromTeam(userId, teamId) {
+  const { data, error } = await supabase.rpc('remove_user_from_team_admin', {
+    p_user_id: userId,
+    p_team_id: teamId
+  });
+  return { success: data === true, error };
+}
+
+export async function removeUserFromClub(userId, clubId) {
+  const { data, error } = await supabase.rpc('remove_user_from_club_admin', {
+    p_user_id: userId,
+    p_club_id: clubId
+  });
+  return { success: data === true, error };
+}
+
+export async function updateUserRole(userId, teamId, newRole) {
+  const { data, error } = await supabase.rpc('update_user_role_admin', {
+    p_user_id: userId,
+    p_team_id: teamId,
+    p_new_role: newRole
+  });
+  return { success: data === true, error };
+}
+
+export async function getSystemStats() {
+  const { data, error } = await supabase.rpc('get_system_stats_admin');
+  return { stats: data || {}, error };
+}
