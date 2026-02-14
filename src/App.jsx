@@ -197,7 +197,7 @@ const initialState = {
   nextPlayerId: DEFAULT_PLAYERS.length,
   clubs: DEFAULT_CLUBS.map((name, i) => ({ id: i, name })),
   nextClubId: DEFAULT_CLUBS.length,
-  teamTitle: "U10 Academy",
+  teamTitle: "Ultimate Team",
   loaded: false,
 };
 
@@ -2089,10 +2089,17 @@ export default function App() {
 
   // Handle guest sign out
   function handleGuestSignOut() {
-    if (confirm('Are you sure you want to sign out? Your guest data will be deleted.')) {
+    if (confirm('Are you sure you want to sign out? All your guest data (matches, players, clubs) will be permanently deleted.')) {
+      // Clear all storage
       localStorage.clear();
+      sessionStorage.clear();
+
+      // Reset to initial state
       setGuestMode(false);
       dispatch({ type: "LOAD_SAVED", data: initialState });
+
+      // Reload page to ensure clean state
+      window.location.reload();
     }
   }
 
