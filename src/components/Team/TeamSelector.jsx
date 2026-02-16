@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth, usePermissions } from '../../hooks/useAuth';
 
 export function TeamSelector({ onTeamCreated }) {
-  const { currentTeam, teams, selectTeam, createNewTeam, userClubs } = useAuth();
+  const { currentTeam, teams, selectTeam, createNewTeam, userClubs, isSuperAdmin } = useAuth();
   const { canEdit, canCreateTeam } = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -10,6 +10,11 @@ export function TeamSelector({ onTeamCreated }) {
   const [selectedClubId, setSelectedClubId] = useState('');
   const [creating, setCreating] = useState(false);
   const dropdownRef = useRef(null);
+
+  // Hide team selector for super admins
+  if (isSuperAdmin) {
+    return null;
+  }
 
   // Close dropdown when clicking outside
   useEffect(() => {
