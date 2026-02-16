@@ -47,11 +47,12 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     async function loadClubs() {
       const { clubs: clubsList, error: clubsError } = await getAllClubs();
       if (!clubsError && clubsList) {
-        // Show all available clubs
-        setClubs(clubsList);
+        // Filter out "Guest" organization (reserved for guest users)
+        const availableClubs = clubsList.filter(club => club.name !== 'Guest');
+        setClubs(availableClubs);
         // Auto-select only if there's exactly one club (no choice to make)
-        if (clubsList.length === 1) {
-          setSelectedClubId(clubsList[0].id);
+        if (availableClubs.length === 1) {
+          setSelectedClubId(availableClubs[0].id);
         }
         // If multiple clubs, leave blank so user must choose
       }
