@@ -49,10 +49,11 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
       if (!clubsError && clubsList) {
         // Show all available clubs
         setClubs(clubsList);
-        // Auto-select first club if available
-        if (clubsList.length > 0) {
+        // Auto-select only if there's exactly one club (no choice to make)
+        if (clubsList.length === 1) {
           setSelectedClubId(clubsList[0].id);
         }
+        // If multiple clubs, leave blank so user must choose
       }
     }
     loadClubs();
@@ -71,8 +72,8 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     }
 
     // Validate organization selection (only if not coming from invitation)
-    if (!hasInvitation && !selectedClubId && !teamName.trim()) {
-      setError('Please select an organization or enter a team name');
+    if (!hasInvitation && !selectedClubId) {
+      setError('Please select an organization');
       setLoading(false);
       return;
     }
@@ -224,6 +225,7 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
                       disabled={loading}
                     >
+                      <option value="">Select an organization...</option>
                       {clubs.map((club) => (
                         <option key={club.id} value={club.id}>
                           {club.name}
