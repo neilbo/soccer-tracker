@@ -47,12 +47,11 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     async function loadClubs() {
       const { clubs: clubsList, error: clubsError } = await getAllClubs();
       if (!clubsError && clubsList) {
-        // Filter to only show North Star FC in signup
-        const filteredClubs = clubsList.filter(club => club.name === 'North Star FC');
-        setClubs(filteredClubs);
-        // Auto-select North Star FC if available
-        if (filteredClubs.length > 0) {
-          setSelectedClubId(filteredClubs[0].id);
+        // Show all available clubs
+        setClubs(clubsList);
+        // Auto-select first club if available
+        if (clubsList.length > 0) {
+          setSelectedClubId(clubsList[0].id);
         }
       }
     }
