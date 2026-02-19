@@ -323,8 +323,22 @@ export function useAuth() {
 
 // Hook to check permissions for current team
 export function usePermissions() {
-  const { currentTeam, isSuperAdmin } = useAuth();
+  const { currentTeam, isSuperAdmin, isGuest } = useAuth();
 
+  // Guest users always have full permissions for their local data
+  if (isGuest) {
+    return {
+      canEdit: true,
+      canView: true,
+      canExport: true,
+      isReadOnly: false,
+      isSuperAdmin: false,
+      canCreateTeam: false,
+      role: null,
+    };
+  }
+
+  // Role-based permissions for authenticated users
   const canEdit = isSuperAdmin || currentTeam?.role === 'team_staff';
   const canView = isSuperAdmin || currentTeam?.role === 'club_admin' || currentTeam?.role === 'team_staff';
   const canExport = true; // All authenticated users can export

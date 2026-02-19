@@ -47,13 +47,14 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     async function loadClubs() {
       const { clubs: clubsList, error: clubsError } = await getAllClubs();
       if (!clubsError && clubsList) {
-        // Filter to only show North Star FC in signup
-        const filteredClubs = clubsList.filter(club => club.name === 'North Star FC');
-        setClubs(filteredClubs);
-        // Auto-select North Star FC if available
-        if (filteredClubs.length > 0) {
-          setSelectedClubId(filteredClubs[0].id);
+        // Filter out "Guest" organization (reserved for guest users)
+        const availableClubs = clubsList.filter(club => club.name !== 'Guest');
+        setClubs(availableClubs);
+        // Auto-select only if there's exactly one club (no choice to make)
+        if (availableClubs.length === 1) {
+          setSelectedClubId(availableClubs[0].id);
         }
+        // If multiple clubs, leave blank so user must choose
       }
     }
     loadClubs();
@@ -72,8 +73,8 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
     }
 
     // Validate organization selection (only if not coming from invitation)
-    if (!hasInvitation && !selectedClubId && !teamName.trim()) {
-      setError('Please select an organization or enter a team name');
+    if (!hasInvitation && !selectedClubId) {
+      setError('Please select an organization');
       setLoading(false);
       return;
     }
@@ -225,6 +226,7 @@ export function SignupScreen({ onSwitchToLogin, onContinueAsGuest }) {
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"
                       disabled={loading}
                     >
+                      <option value="">Select an organization...</option>
                       {clubs.map((club) => (
                         <option key={club.id} value={club.id}>
                           {club.name}
