@@ -2161,7 +2161,11 @@ export default function App() {
       saveState(state);
 
       // Also save to Supabase if authenticated with a team
-      if (isAuthenticated && currentTeam?.team_id) {
+      // Skip saving when viewing admin pages (no team-specific data to save)
+      const adminViews = ['users', 'invitations', 'organizations'];
+      const isAdminView = adminViews.includes(state.view);
+
+      if (isAuthenticated && currentTeam?.team_id && !isAdminView) {
         // Validate team_id is a UUID (contains hyphens)
         const isValidUUID = typeof currentTeam.team_id === 'string' && currentTeam.team_id.includes('-');
 
