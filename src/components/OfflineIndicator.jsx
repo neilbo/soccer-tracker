@@ -1,10 +1,13 @@
 import { useOfflineSync } from '../hooks/useOfflineSync';
 
-export function OfflineIndicator({ onSyncClick }) {
+export function OfflineIndicator({ onSyncClick, alwaysShow = false }) {
   const { isOnline, isSyncing, pendingCount, lastSyncTime } = useOfflineSync();
 
-  if (isOnline && pendingCount === 0) {
-    return null; // Hide when online with nothing to sync
+  // Show indicator when: offline, syncing, has pending changes, or alwaysShow is true
+  const shouldShow = !isOnline || isSyncing || pendingCount > 0 || alwaysShow;
+
+  if (!shouldShow) {
+    return null;
   }
 
   return (
@@ -75,7 +78,7 @@ export function OfflineIndicator({ onSyncClick }) {
               ) : pendingCount > 0 ? (
                 `${pendingCount} change${pendingCount === 1 ? '' : 's'} to sync`
               ) : (
-                'All synced'
+                'Online & Synced'
               )
             ) : (
               'Offline Mode'
@@ -89,6 +92,11 @@ export function OfflineIndicator({ onSyncClick }) {
           {!isOnline && pendingCount > 0 && (
             <p className="text-xs text-amber-700">
               {pendingCount} pending change{pendingCount === 1 ? '' : 's'}
+            </p>
+          )}
+          {!isOnline && pendingCount === 0 && (
+            <p className="text-xs text-amber-700">
+              Changes will sync when online
             </p>
           )}
         </div>

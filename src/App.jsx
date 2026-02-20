@@ -2499,7 +2499,7 @@ export default function App() {
       </div>
 
       {/* Offline Indicator - shows when offline or has pending syncs */}
-      {isAuthenticated && <OfflineIndicator onSyncClick={handleSync} />}
+      {isAuthenticated && <OfflineIndicator onSyncClick={handleSync} alwaysShow={true} />}
     </div>
   );
 }
