@@ -31,7 +31,7 @@ export function TeamSelector({ onTeamCreated }) {
 
   async function handleCreateTeam(e) {
     e.preventDefault();
-    if (!newTeamName.trim()) return;
+    if (!newTeamName.trim() || creating) return; // Prevent duplicate submissions
 
     setCreating(true);
     const clubId = selectedClubId || null;
