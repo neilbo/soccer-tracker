@@ -290,13 +290,14 @@ function reducer(state, action) {
           events: [],
           position: { role: null, side: null },
         })),
-        status: "setup",
+        status: action.isLive === false ? "completed" : "setup",
         teamGoals: 0,
         opponentGoals: 0,
         matchSeconds: 0,
         matchRunning: false,
       };
-      return { ...state, matches: [...state.matches, match], currentMatch: match, view: "setup" };
+      const view = action.isLive === false ? "match-edit" : "setup";
+      return { ...state, matches: [...state.matches, match], currentMatch: match, view };
     }
     case "SET_CURRENT_MATCH":
       return {
@@ -558,6 +559,13 @@ const Icon = ({ name, size = 24 }) => {
     users: <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />,
     clock: <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />,
     trophy: <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />,
+    soccer: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 2L9.5 8.5L3 9l6 5.5L7.5 22l4.5-3 4.5 3-1.5-7.5 6-5.5-6.5-.5z" fill="none" />
+        <path d="M12 2v6.5M9.5 8.5L5.5 5M3 9h6.5M9 14.5l-4 4M7.5 22l1.5-7.5M16.5 8.5L18.5 5M21 9h-6.5M15 14.5l4 4M16.5 22l-1.5-7.5" strokeWidth="1.5" />
+      </>
+    ),
     back: <path d="M10 19l-7-7m0 0l7-7m-7 7h18" />,
     stop: <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />,
     chart: <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />,
@@ -619,17 +627,50 @@ const Modal = ({ isOpen, onClose, title, message, onConfirm, confirmText = "Conf
       <div className="fixed inset-0 z-50 bg-black/50 transition-opacity" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full pointer-events-auto transform transition-all">
-          <div className="p-5 space-y-4">
-            {title && <h3 className="text-lg font-bold text-gray-900">{title}</h3>}
-            {message && <p className="text-sm text-gray-600">{message}</p>}
+          <div className="p-6 space-y-5 text-center">
+            {/* Icon */}
+            <div className="flex justify-center">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                  <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Title */}
+            {title && (
+              <h3 className="text-base font-semibold text-gray-900">
+                {title}
+              </h3>
+            )}
+
+            {/* Message */}
+            {message && (
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {message}
+              </p>
+            )}
+
             {children}
-            <div className="flex gap-2 pt-2">
-              <Btn variant="default" size="md" className="flex-1" onClick={onClose}>
+
+            {/* Buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition"
+              >
                 Cancel
-              </Btn>
-              <Btn variant={confirmVariant} size="md" className="flex-1" onClick={onConfirm}>
+              </button>
+              <button
+                onClick={onConfirm}
+                className={`flex-1 px-4 py-2.5 rounded-xl font-medium transition ${
+                  confirmVariant === "danger"
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "bg-blue-600 text-white hover:bg-blue-700"
+                }`}
+              >
                 {confirmText}
-              </Btn>
+              </button>
             </div>
           </div>
         </div>
@@ -1030,9 +1071,210 @@ function ClubsView({ state, dispatch, canEdit = true }) {
   );
 }
 
+// --- Matches ---
+
+function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLiveMatch }) {
+  const [filter, setFilter] = useState("all");
+  const allMatches = [...state.matches].reverse();
+
+  const filteredMatches = allMatches.filter(match => {
+    if (filter === "all") return true;
+    if (filter === "completed") return match.status === "completed";
+    if (filter === "live") return match.status === "live";
+    if (filter === "upcoming") return match.status === "setup";
+    return true;
+  });
+
+  const getMatchResult = (match) => {
+    if (match.status !== "completed") return null;
+    if (match.teamGoals > match.opponentGoals) return "win";
+    if (match.teamGoals < match.opponentGoals) return "loss";
+    return "draw";
+  };
+
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const statusColors = {
+    setup: "bg-gray-100 text-gray-700",
+    live: "bg-red-100 text-red-700",
+    completed: "bg-green-100 text-green-700",
+  };
+
+  const resultColors = {
+    win: "border-l-4 border-emerald-500",
+    loss: "border-l-4 border-red-500",
+    draw: "border-l-4 border-amber-500",
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Matches</h1>
+        {canEdit && (
+          <div className="flex gap-2">
+            <button
+              onClick={onNewMatch}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition flex items-center gap-2"
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 4v16m8-8H4" />
+              </svg>
+              New Live Match
+            </button>
+            <button
+              onClick={onNewNonLiveMatch}
+              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition flex items-center gap-2"
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 4v16m8-8H4" />
+              </svg>
+              New Match
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {[
+          { key: "all", label: "All", count: allMatches.length },
+          { key: "upcoming", label: "Upcoming", count: allMatches.filter(m => m.status === "setup").length },
+          { key: "live", label: "Live", count: allMatches.filter(m => m.status === "live").length },
+          { key: "completed", label: "Completed", count: allMatches.filter(m => m.status === "completed").length },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap ${
+              filter === f.key
+                ? "bg-blue-600 text-white"
+                : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            {f.label} {f.count > 0 && <span className="opacity-70">({f.count})</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Matches List */}
+      {filteredMatches.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+          <div className="text-gray-400 flex justify-center mb-4">
+            <Icon name="soccer" size={48} />
+          </div>
+          <p className="text-gray-600 font-medium">No matches found</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {filter === "all" ? "Create your first match to get started" : `No ${filter} matches`}
+          </p>
+          {canEdit && filter === "all" && (
+            <div className="mt-4 flex gap-2 justify-center">
+              <button
+                onClick={onNewMatch}
+                className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition"
+              >
+                New Live Match
+              </button>
+              <button
+                onClick={onNewNonLiveMatch}
+                className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition"
+              >
+                New Match
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredMatches.map((match) => {
+            const result = getMatchResult(match);
+            return (
+              <div
+                key={match.id}
+                onClick={() => {
+                  if (match.status === "setup") {
+                    dispatch({ type: "LOAD_MATCH", matchId: match.id });
+                    dispatch({ type: "SET_VIEW", view: "setup" });
+                  } else if (match.status === "live") {
+                    dispatch({ type: "LOAD_MATCH", matchId: match.id });
+                    dispatch({ type: "SET_VIEW", view: "match" });
+                  } else {
+                    dispatch({ type: "LOAD_MATCH", matchId: match.id });
+                    dispatch({ type: "SET_VIEW", view: "match-edit" });
+                  }
+                }}
+                className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition cursor-pointer ${
+                  result ? resultColors[result] : ""
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  {/* Left: Match Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-gray-500">{formatDate(match.date)}</span>
+                      {match.tag && (
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-md">
+                          {match.tag}
+                        </span>
+                      )}
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-md ${statusColors[match.status]}`}>
+                        {match.status === "setup" ? "Upcoming" : match.status === "live" ? "Live" : "Completed"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm ${match.venue === "home" ? "font-semibold text-gray-900" : "text-gray-600"}`}>
+                          {state.teamTitle || "Us"}
+                        </span>
+                        {match.venue === "home" && <span className="text-xs">🏠</span>}
+                      </div>
+
+                      {match.status !== "setup" && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-gray-900">{match.teamGoals}</span>
+                          <span className="text-gray-400">-</span>
+                          <span className="text-lg font-bold text-gray-900">{match.opponentGoals}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        {match.venue === "away" && <span className="text-xs">✈️</span>}
+                        <span className={`text-sm ${match.venue === "away" ? "font-semibold text-gray-900" : "text-gray-600"}`}>
+                          {match.opponent}
+                        </span>
+                      </div>
+                    </div>
+
+                    {match.description && (
+                      <p className="text-xs text-gray-500 mt-2 line-clamp-1">{match.description}</p>
+                    )}
+                  </div>
+
+                  {/* Right: Action Icon */}
+                  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400 shrink-0">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Dashboard ---
 
-function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false }) {
+function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false, onNewMatch, onNewNonLiveMatch }) {
   // Super admins see system stats overview instead of match stats
   if (isSuperAdmin) {
     return <SystemStatsView />;
@@ -1083,7 +1325,8 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false }) {
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="flex items-center gap-2">
           {matches.length > 0 && <Btn variant="default" onClick={() => exportDashboardCSV(state)}>Export</Btn>}
-          {canEdit && <Btn variant="primary" onClick={() => dispatch({ type: "SET_VIEW", view: "new-match" })}>New Match</Btn>}
+          {canEdit && <Btn variant="primary" onClick={onNewMatch}>New Live Match</Btn>}
+          {canEdit && <Btn variant="default" onClick={onNewNonLiveMatch}>New Match</Btn>}
         </div>
       </div>
       {totalMatches > 0 && (
@@ -1163,8 +1406,8 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false }) {
         </div>
       )}
       <div className="space-y-3">
-        <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Icon name="trophy" size={16} />Matches</h2>
-        {matches.length === 0 && <div className="flex flex-col items-center justify-center py-12 text-gray-400"><Icon name="trophy" size={48} /><p className="mt-3 text-center">No matches yet. Create your first match!</p></div>}
+        <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Icon name="soccer" size={16} />Matches</h2>
+        {matches.length === 0 && <div className="flex flex-col items-center justify-center py-12 text-gray-400"><Icon name="soccer" size={48} /><p className="mt-3 text-center">No matches yet. Create your first match!</p></div>}
         {matches.map((m) => {
           const result = m.status === "completed" ? (m.teamGoals > m.opponentGoals ? "W" : m.teamGoals < m.opponentGoals ? "L" : "D") : null;
           const resultColor = result === "W" ? "bg-emerald-500" : result === "L" ? "bg-red-500" : result === "D" ? "bg-amber-500" : "bg-blue-500";
@@ -1192,9 +1435,9 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false }) {
   );
 }
 
-// --- New Match ---
+// --- New Match Modal ---
 
-function NewMatch({ state, dispatch, canEdit = true }) {
+function NewMatchModal({ state, dispatch, isOpen, onClose, isLive = true }) {
   const [opponent, setOpponent] = useState("");
   const [venue, setVenue] = useState("home");
   const [date, setDate] = useState(() => {
@@ -1224,16 +1467,47 @@ function NewMatch({ state, dispatch, canEdit = true }) {
       date,
       description: description.trim(),
       tag: tag.trim(),
+      isLive,
     });
+
+    // Close modal and reset form
+    onClose();
+    resetForm();
   };
 
+  const resetForm = () => {
+    setOpponent("");
+    setVenue("home");
+    const d = new Date();
+    setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+    setDescription("");
+    setTag("");
+    setTouched(false);
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Btn variant="ghost" size="sm" onClick={() => dispatch({ type: "SET_VIEW", view: "dashboard" })}><Icon name="back" /></Btn>
-        <h1 className="text-2xl font-bold text-gray-900">New Match</h1>
-      </div>
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">{isLive ? "New Live Match" : "New Match"}</h2>
+          <button
+            onClick={() => {
+              onClose();
+              resetForm();
+            }}
+            className="p-2 hover:bg-gray-100 rounded-xl transition"
+          >
+            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Opponent</label>
           <ComboSelect
@@ -1280,9 +1554,26 @@ function NewMatch({ state, dispatch, canEdit = true }) {
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Round 3 of the winter comp, wet conditions expected..."
             className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition resize-none" rows={3} />
         </div>
-        <Btn variant="primary" size="lg" className="w-full" onClick={handleCreateMatch}>
-          Create Match
-        </Btn>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3">
+          <button
+            onClick={() => {
+              onClose();
+              resetForm();
+            }}
+            className="flex-1 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreateMatch}
+            className="flex-1 px-5 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition"
+          >
+            Create Match
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1686,14 +1977,14 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
   const savePlayerStats = () => {
     if (!editingPlayer) return;
 
-    const newSeconds = editMinsOn * 60;
+    const newSeconds = (Number(editMinsOn) || 0) * 60;
 
     dispatch({
       type: "UPDATE_PLAYER_STATS_BULK",
       playerId: editingPlayer.id,
       seconds: newSeconds,
-      goals: editGoals,
-      assists: editAssists,
+      goals: Number(editGoals) || 0,
+      assists: Number(editAssists) || 0,
       notes: editNotes,
     });
 
@@ -1891,8 +2182,23 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
                           type="number"
                           min={0}
                           max={totalMatchMins}
-                          value={editMinsOn}
-                          onChange={(e) => setEditMinsOn(Math.max(0, Math.min(totalMatchMins, parseInt(e.target.value, 10) || 0)))}
+                          value={editMinsOn === '' ? '' : editMinsOn}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '') {
+                              setEditMinsOn('');
+                              return;
+                            }
+                            const num = parseInt(val, 10);
+                            if (!isNaN(num)) {
+                              setEditMinsOn(Math.max(0, Math.min(totalMatchMins, num)));
+                            }
+                          }}
+                          onBlur={() => {
+                            if (editMinsOn === '') {
+                              setEditMinsOn(0);
+                            }
+                          }}
                           className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
                         />
                         <p className="text-xs text-gray-500 mt-1">Max: {totalMatchMins} minutes</p>
@@ -1901,29 +2207,59 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">⚽ Goals</label>
                           <div className="flex items-center gap-2">
-                            <button onClick={() => setEditGoals(Math.max(0, editGoals - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
+                            <button onClick={() => setEditGoals(Math.max(0, (Number(editGoals) || 0) - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
                             <input
                               type="number"
                               min={0}
-                              value={editGoals}
-                              onChange={(e) => setEditGoals(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                              value={editGoals === '' ? '' : editGoals}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                  setEditGoals('');
+                                  return;
+                                }
+                                const num = parseInt(val, 10);
+                                if (!isNaN(num)) {
+                                  setEditGoals(Math.max(0, num));
+                                }
+                              }}
+                              onBlur={() => {
+                                if (editGoals === '') {
+                                  setEditGoals(0);
+                                }
+                              }}
                               className="flex-1 px-4 py-2.5 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-lg"
                             />
-                            <button onClick={() => setEditGoals(editGoals + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
+                            <button onClick={() => setEditGoals((Number(editGoals) || 0) + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
                           </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">🅰️ Assists</label>
                           <div className="flex items-center gap-2">
-                            <button onClick={() => setEditAssists(Math.max(0, editAssists - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
+                            <button onClick={() => setEditAssists(Math.max(0, (Number(editAssists) || 0) - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
                             <input
                               type="number"
                               min={0}
-                              value={editAssists}
-                              onChange={(e) => setEditAssists(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                              value={editAssists === '' ? '' : editAssists}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                  setEditAssists('');
+                                  return;
+                                }
+                                const num = parseInt(val, 10);
+                                if (!isNaN(num)) {
+                                  setEditAssists(Math.max(0, num));
+                                }
+                              }}
+                              onBlur={() => {
+                                if (editAssists === '') {
+                                  setEditAssists(0);
+                                }
+                              }}
                               className="flex-1 px-4 py-2.5 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-lg"
                             />
-                            <button onClick={() => setEditAssists(editAssists + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
+                            <button onClick={() => setEditAssists((Number(editAssists) || 0) + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
                           </div>
                         </div>
                       </div>
@@ -2041,7 +2377,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
             dispatch({ type: "DELETE_MATCH" });
             setConfirmDelete(false);
           }}
-          confirmText="Delete Match"
+          confirmText="Delete"
           confirmVariant="danger"
         />
       )}
@@ -2057,6 +2393,8 @@ export default function App() {
   const { isOnline, queueSync, processSyncQueue } = useOfflineSyncContext();
   const [showSignup, setShowSignup] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
+  const [showNewMatchModal, setShowNewMatchModal] = useState(false);
+  const [showNewNonLiveMatchModal, setShowNewNonLiveMatchModal] = useState(false);
   const [state, dispatch] = useReducer(reducer, initialState);
   const [justCreatedTeam, setJustCreatedTeam] = useState(false);
   const intervalRef = useRef(null);
@@ -2225,7 +2563,7 @@ export default function App() {
 
   const navItems = [
     { view: "dashboard", icon: "home", label: "Dashboard" },
-    ...(!isSuperAdmin ? [{ view: "new-match", icon: "plus", label: "New Match" }] : []),
+    ...(!isSuperAdmin ? [{ view: "matches", icon: "soccer", label: "Matches" }] : []),
     ...(!isSuperAdmin ? [{ view: "squad", icon: "users", label: "Team" }] : []),
     ...(!isSuperAdmin ? [{ view: "clubs", icon: "trophy", label: "Clubs" }] : []),
     ...(isSuperAdmin ? [
@@ -2348,22 +2686,23 @@ export default function App() {
     );
   }
 
-  const NavButton = ({ item, live }) => (
-    <button
-      type="button"
-      onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition w-full text-left font-medium ${
-        state.view === item.view ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"
-      }`}
-    >
-      {live ? (
-        <span className="relative shrink-0"><Icon name="clock" size={22} /><span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" /></span>
-      ) : (
-        <Icon name={item.icon} size={22} className="shrink-0" />
-      )}
-      <span>{item.label}</span>
-    </button>
-  );
+  const NavButton = ({ item, live }) => {
+    return (
+      <button
+        type="button"
+        onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
+        className={`flex items-center gap-3 px-4 py-3 rounded-xl transition w-full text-left font-medium ${
+          state.view === item.view || (item.view === "matches" && state.view === "match") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <span className="relative shrink-0">
+          <Icon name={item.icon} size={22} />
+          {live && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />}
+        </span>
+        <span>{item.label}</span>
+      </button>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -2411,11 +2750,12 @@ export default function App() {
         </div>
         <nav className="p-3 flex flex-col gap-1 flex-1">
           {navItems.map((item) => (
-            <NavButton key={item.view} item={item} live={false} />
+            <NavButton
+              key={item.view}
+              item={item}
+              live={item.view === "matches" && state.currentMatch?.status === "live"}
+            />
           ))}
-          {state.currentMatch?.status === "live" && (
-            <NavButton item={{ view: "match", icon: "clock", label: "Live" }} live />
-          )}
         </nav>
       </aside>
 
@@ -2468,8 +2808,8 @@ export default function App() {
               <PendingClubInvitations />
             </>
           )}
-          {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} canEdit={canEdit} isSuperAdmin={isSuperAdmin} />}
-          {state.view === "new-match" && <NewMatch state={state} dispatch={dispatch} canEdit={canEdit} />}
+          {state.view === "dashboard" && <Dashboard state={state} dispatch={dispatch} canEdit={canEdit} isSuperAdmin={isSuperAdmin} onNewMatch={() => setShowNewMatchModal(true)} onNewNonLiveMatch={() => setShowNewNonLiveMatchModal(true)} />}
+          {state.view === "matches" && <MatchesView state={state} dispatch={dispatch} canEdit={canEdit} onNewMatch={() => setShowNewMatchModal(true)} onNewNonLiveMatch={() => setShowNewNonLiveMatchModal(true)} />}
           {state.view === "squad" && <SquadView state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "clubs" && <ClubsView state={state} dispatch={dispatch} canEdit={canEdit} />}
           {state.view === "users" && isSuperAdmin && <UserManagementView />}
@@ -2483,23 +2823,45 @@ export default function App() {
 
       {/* Bottom nav: mobile only */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex justify-around z-20">
-        {navItems.map((item) => (
-          <button key={item.view} type="button" onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
-            className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition ${state.view === item.view ? "text-blue-600" : "text-gray-400"}`}>
-            <Icon name={item.icon} size={20} /><span className="text-xs font-medium">{item.label}</span>
-          </button>
-        ))}
-        {state.currentMatch?.status === "live" && (
-          <button type="button" onClick={() => dispatch({ type: "SET_VIEW", view: "match" })}
-            className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition ${state.view === "match" ? "text-blue-600" : "text-gray-400"}`}>
-            <span className="relative"><Icon name="clock" size={20} /><span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" /></span>
-            <span className="text-xs font-medium">Live</span>
-          </button>
-        )}
+        {navItems.map((item) => {
+          const isLive = item.view === "matches" && state.currentMatch?.status === "live";
+          const isActive = state.view === item.view || (item.view === "matches" && state.view === "match");
+
+          return (
+            <button
+              key={item.view}
+              type="button"
+              onClick={() => dispatch({ type: "SET_VIEW", view: item.view })}
+              className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition ${isActive ? "text-blue-600" : "text-gray-400"}`}
+            >
+              <span className="relative">
+                <Icon name={item.icon} size={20} />
+                {isLive && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
+              </span>
+              <span className="text-xs font-medium">{item.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Offline Indicator - shows when offline or has pending syncs */}
       {isAuthenticated && <OfflineIndicator onSyncClick={handleSync} alwaysShow={true} />}
+
+      {/* New Match Modal */}
+      <NewMatchModal
+        state={state}
+        dispatch={dispatch}
+        isOpen={showNewMatchModal}
+        onClose={() => setShowNewMatchModal(false)}
+        isLive={true}
+      />
+      <NewMatchModal
+        state={state}
+        dispatch={dispatch}
+        isOpen={showNewNonLiveMatchModal}
+        onClose={() => setShowNewNonLiveMatchModal(false)}
+        isLive={false}
+      />
     </div>
   );
 }
