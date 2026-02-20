@@ -68,12 +68,16 @@ export function UserManagementView() {
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
-  function getTeamCount(user) {
-    return (user.team_memberships || []).length;
+  function getTeamNames(user) {
+    const teamMemberships = user.team_memberships || [];
+    if (teamMemberships.length === 0) return 'No teams';
+    return teamMemberships.map(tm => tm.team_name).join(', ');
   }
 
-  function getClubCount(user) {
-    return (user.club_memberships || []).length;
+  function getClubNames(user) {
+    const clubMemberships = user.club_memberships || [];
+    if (clubMemberships.length === 0) return 'No clubs';
+    return clubMemberships.map(cm => cm.club_name).join(', ');
   }
 
   function getRoleBadges(user) {
@@ -197,8 +201,8 @@ export function UserManagementView() {
             <div className="divide-y divide-gray-100">
               {filteredUsers.map((user) => {
                 const roleBadges = getRoleBadges(user);
-                const teamCount = getTeamCount(user);
-                const clubCount = getClubCount(user);
+                const teamNames = getTeamNames(user);
+                const clubNames = getClubNames(user);
 
                 return (
                   <div
@@ -228,18 +232,18 @@ export function UserManagementView() {
 
                         <div className="flex items-center gap-4 text-xs text-gray-500">
                           <span className="flex items-center gap-1">
-                            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
                               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z" />
                             </svg>
-                            {teamCount} {teamCount === 1 ? 'team' : 'teams'}
+                            <span className="truncate">{teamNames}</span>
                           </span>
                           <span className="flex items-center gap-1">
-                            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
                               <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                             </svg>
-                            {clubCount} {clubCount === 1 ? 'club' : 'clubs'}
+                            <span className="truncate">{clubNames}</span>
                           </span>
-                          <span>Joined: {formatDate(user.created_at)}</span>
+                          <span className="whitespace-nowrap">Joined: {formatDate(user.created_at)}</span>
                         </div>
                       </div>
 
