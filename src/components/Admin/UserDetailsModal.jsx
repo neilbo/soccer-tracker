@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import { removeUserFromTeam, removeUserFromClub, updateUserRole } from '../../supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 export function UserDetailsModal({ user, onClose, onUpdate }) {
+  const { user: currentUser } = useAuth();
   const [processing, setProcessing] = useState(false);
   const [changingRole, setChangingRole] = useState(null);
+
+  // Check if viewing own profile and is super admin
+  const isViewingSelf = currentUser?.id === user.user_id;
+  const canModifyOwnProfile = !(isViewingSelf && user.is_super_admin);
 
   function formatDate(dateString) {
     if (!dateString) return 'N/A';
@@ -18,6 +24,11 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
   }
 
   async function handleRemoveFromTeam(teamMembership) {
+    if (!canModifyOwnProfile) {
+      alert('You cannot remove yourself from teams while you are a super admin.');
+      return;
+    }
+
     if (!confirm(`Remove ${user.full_name || user.email} from team "${teamMembership.team_name}"?`)) {
       return;
     }
@@ -41,6 +52,11 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
   }
 
   async function handleRemoveFromClub(clubMembership) {
+    if (!canModifyOwnProfile) {
+      alert('You cannot remove yourself from clubs while you are a super admin.');
+      return;
+    }
+
     if (!confirm(`Remove ${user.full_name || user.email} from club "${clubMembership.club_name}"?`)) {
       return;
     }
@@ -65,6 +81,13 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
 
   async function handleChangeRole(teamMembership, newRole) {
     if (teamMembership.role === newRole) {
+      setChangingRole(null);
+      return;
+    }
+
+    // Prevent super admins from demoting themselves
+    if (!canModifyOwnProfile && newRole !== 'super_admin') {
+      alert('You cannot change your own role while you are a super admin.');
       setChangingRole(null);
       return;
     }
@@ -136,6 +159,13 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
                   </span>
                 )}
               </div>
+              {!canModifyOwnProfile && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <p className="text-xs text-amber-700">
+                    <strong>Note:</strong> You cannot modify your own super admin memberships. To make changes, have another super admin modify your account.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -210,9 +240,13 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
                         <>
                           <button
                             onClick={() => setChangingRole(tm.team_id)}
-                            disabled={processing}
-                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Change Role"
+                            disabled={processing || !canModifyOwnProfile}
+                            className={`p-1.5 rounded-lg transition ${
+                              !canModifyOwnProfile
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                            title={!canModifyOwnProfile ? "Cannot modify your own super admin role" : "Change Role"}
                           >
                             <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -220,9 +254,13 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
                           </button>
                           <button
                             onClick={() => handleRemoveFromTeam(tm)}
-                            disabled={processing}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                            title="Remove from Team"
+                            disabled={processing || !canModifyOwnProfile}
+                            className={`p-1.5 rounded-lg transition ${
+                              !canModifyOwnProfile
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                            title={!canModifyOwnProfile ? "Cannot remove yourself as super admin" : "Remove from Team"}
                           >
                             <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <polyline points="3 6 5 6 21 6" />
@@ -277,9 +315,13 @@ export function UserDetailsModal({ user, onClose, onUpdate }) {
 
                     <button
                       onClick={() => handleRemoveFromClub(cm)}
-                      disabled={processing}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition shrink-0"
-                      title="Remove from Club"
+                      disabled={processing || !canModifyOwnProfile}
+                      className={`p-1.5 rounded-lg transition shrink-0 ${
+                        !canModifyOwnProfile
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                      }`}
+                      title={!canModifyOwnProfile ? "Cannot remove yourself as super admin" : "Remove from Club"}
                     >
                       <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6" />
