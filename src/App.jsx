@@ -14,6 +14,8 @@ import { SystemStatsView } from "./components/Admin/SystemStatsView";
 import { UserManagementView } from "./components/Admin/UserManagementView";
 import { InvitationManagementView } from "./components/Admin/InvitationManagementView";
 import { InvitationLanding } from "./components/Auth/InvitationLanding";
+import { useOfflineSyncContext } from "./contexts/OfflineSyncContext";
+import { OfflineIndicator } from "./components/OfflineIndicator";
 
 const DEFAULT_PLAYERS = [
   "Lionel Messi", "Cristiano Ronaldo", "Pelé", "Diego Maradona",
@@ -2052,6 +2054,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
 export default function App() {
   const { loading: authLoading, isAuthenticated, isGuest, currentTeam, userClubs, isSuperAdmin, user, refreshTeams } = useAuth();
   const { canEdit, isReadOnly } = usePermissions();
+  const { isOnline, queueSync, processSyncQueue } = useOfflineSyncContext();
   const [showSignup, setShowSignup] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -2174,10 +2177,42 @@ export default function App() {
           return;
         }
 
-        saveToSupabase(state, currentTeam.team_id);
+        // Queue for sync if offline, save directly if online
+        if (isOnline) {
+          saveToSupabase(state, currentTeam.team_id);
+        } else {
+          queueSync({
+            type: 'save_state',
+            state: getPersistedPayload(state),
+            teamId: currentTeam.team_id,
+          });
+        }
       }
     }, 500);
-  }, [state, isAuthenticated, currentTeam?.team_id]);
+  }, [state, isAuthenticated, currentTeam?.team_id, isOnline, queueSync]);
+
+  // Auto-sync when coming back online
+  useEffect(() => {
+    if (isOnline && isAuthenticated && currentTeam?.team_id) {
+      // Small delay to ensure connection is stable
+      const syncTimeout = setTimeout(() => {
+        handleSync();
+      }, 1000);
+
+      return () => clearTimeout(syncTimeout);
+    }
+  }, [isOnline, isAuthenticated, currentTeam?.team_id]);
+
+  // Sync handler
+  async function handleSync() {
+    if (!currentTeam?.team_id) return;
+
+    await processSyncQueue(async (item) => {
+      if (item.type === 'save_state') {
+        await saveToSupabase(item.state, item.teamId);
+      }
+    });
+  }
 
   useEffect(() => {
     if (state.currentMatch?.status === "live") {
@@ -2462,6 +2497,9 @@ export default function App() {
           </button>
         )}
       </div>
+
+      {/* Offline Indicator - shows when offline or has pending syncs */}
+      {isAuthenticated && <OfflineIndicator onSyncClick={handleSync} />}
     </div>
   );
 }
