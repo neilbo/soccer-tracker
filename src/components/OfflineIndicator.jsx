@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 
 export function OfflineIndicator({ onSyncClick, alwaysShow = false }) {
   const { isOnline, isSyncing, pendingCount, lastSyncTime } = useOfflineSync();
+  const [dismissed, setDismissed] = useState(false);
+
+  const isIdleOnline = isOnline && !isSyncing && pendingCount === 0;
 
   // Show indicator when: offline, syncing, has pending changes, or alwaysShow is true
   const shouldShow = !isOnline || isSyncing || pendingCount > 0 || alwaysShow;
 
-  if (!shouldShow) {
+  if (!shouldShow || (isIdleOnline && dismissed)) {
     return null;
   }
 
@@ -108,6 +112,19 @@ export function OfflineIndicator({ onSyncClick, alwaysShow = false }) {
             className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"
           >
             Sync Now
+          </button>
+        )}
+
+        {/* Dismiss Button (only when idle online) */}
+        {isIdleOnline && (
+          <button
+            onClick={() => setDismissed(true)}
+            className="text-blue-400 hover:text-blue-600 transition p-0.5 -mr-1"
+            aria-label="Dismiss"
+          >
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
           </button>
         )}
       </div>
