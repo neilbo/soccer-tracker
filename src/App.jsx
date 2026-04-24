@@ -2848,7 +2848,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="max-w-lg mx-auto px-4 py-6 pb-24 md:pb-8 md:max-w-2xl">
+        <div className="max-w-lg mx-auto px-4 py-6 pb-24 md:pb-8 md:max-w-6xl">
           {isAuthenticated && (
             <>
               <PendingInvitations />
