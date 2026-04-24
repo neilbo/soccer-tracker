@@ -344,6 +344,11 @@ function reducer(state, action) {
       const view = action.isLive === false ? "match-edit" : "setup";
       return { ...state, matches: [...state.matches, match], currentMatch: match, view };
     }
+    case "LOAD_MATCH": {
+      const match = state.matches.find((m) => m.id === action.matchId);
+      if (!match) return state;
+      return { ...state, currentMatch: match };
+    }
     case "SET_CURRENT_MATCH":
       return {
         ...state,
@@ -1122,6 +1127,7 @@ function ClubsView({ state, dispatch, canEdit = true }) {
 
 function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLiveMatch }) {
   const [filter, setFilter] = useState("all");
+  const [selectedMatchId, setSelectedMatchId] = useState(null);
   const allMatches = [...state.matches].filter((m) => !m.deletedAt).reverse();
 
   const filteredMatches = allMatches.filter(match => {
@@ -1131,6 +1137,24 @@ function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLive
     if (filter === "upcoming") return match.status === "setup";
     return true;
   });
+
+  // Auto-select the first match on mount and when filter changes
+  useEffect(() => {
+    const all = [...state.matches].filter((m) => !m.deletedAt).reverse();
+    const first = all.find((m) => {
+      if (filter === "completed") return m.status === "completed";
+      if (filter === "live") return m.status === "live";
+      if (filter === "upcoming") return m.status === "setup";
+      return true;
+    });
+    if (first) {
+      setSelectedMatchId(first.id);
+      dispatch({ type: "LOAD_MATCH", matchId: first.id });
+    } else {
+      setSelectedMatchId(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
 
   const getMatchResult = (match) => {
     if (match.status !== "completed") return null;
@@ -1160,36 +1184,118 @@ function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLive
     draw: "border-l-4 border-amber-500",
   };
 
+  const handleMatchClick = (match) => {
+    if (match.status === "setup") {
+      dispatch({ type: "LOAD_MATCH", matchId: match.id });
+      dispatch({ type: "SET_VIEW", view: "setup" });
+    } else if (match.status === "live") {
+      dispatch({ type: "LOAD_MATCH", matchId: match.id });
+      dispatch({ type: "SET_VIEW", view: "match" });
+    } else {
+      dispatch({ type: "LOAD_MATCH", matchId: match.id });
+      setSelectedMatchId(match.id);
+    }
+  };
+
+  const matchCards = filteredMatches.length === 0 ? (
+    <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+      <div className="text-gray-400 flex justify-center mb-4">
+        <Icon name="soccer" size={48} />
+      </div>
+      <p className="text-gray-600 font-medium">No matches found</p>
+      <p className="text-sm text-gray-500 mt-1">
+        {filter === "all" ? "Create your first match to get started" : `No ${filter} matches`}
+      </p>
+      {canEdit && filter === "all" && (
+        <div className="mt-4 flex gap-2 justify-center">
+          <button onClick={onNewMatch} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition">
+            New Live Match
+          </button>
+          <button onClick={onNewNonLiveMatch} className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition">
+            New Match
+          </button>
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {filteredMatches.map((match) => {
+        const result = getMatchResult(match);
+        const isSelected = match.id === selectedMatchId;
+        return (
+          <div
+            key={match.id}
+            onClick={() => handleMatchClick(match)}
+            className={`rounded-xl border p-4 hover:shadow-md transition cursor-pointer ${
+              result ? resultColors[result] : ""
+            } ${isSelected ? "bg-blue-50 border-blue-300 shadow-md" : "bg-white border-gray-200"}`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-gray-500">{formatDate(match.date)}</span>
+                  {match.tag && (
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-md">{match.tag}</span>
+                  )}
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-md ${statusColors[match.status]}`}>
+                    {match.status === "setup" ? "Upcoming" : match.status === "live" ? "Live" : "Completed"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm ${match.venue === "home" ? "font-semibold text-gray-900" : "text-gray-600"}`}>
+                      {state.teamTitle || "Us"}
+                    </span>
+                    {match.venue === "home" && <span className="text-xs">🏠</span>}
+                  </div>
+                  {match.status !== "setup" && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-gray-900">{match.teamGoals}</span>
+                      <span className="text-gray-400">-</span>
+                      <span className="text-lg font-bold text-gray-900">{match.opponentGoals}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    {match.venue === "away" && <span className="text-xs">✈️</span>}
+                    <span className={`text-sm ${match.venue === "away" ? "font-semibold text-gray-900" : "text-gray-600"}`}>
+                      {match.opponent}
+                    </span>
+                  </div>
+                </div>
+                {match.description && (
+                  <p className="text-xs text-gray-500 mt-2 line-clamp-1">{match.description}</p>
+                )}
+              </div>
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 ${isSelected ? "text-blue-500" : "text-gray-400"}`}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* Header — always full width */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Matches</h1>
         {canEdit && (
           <div className="flex gap-2">
-            <button
-              onClick={onNewMatch}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition flex items-center gap-2"
-            >
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 4v16m8-8H4" />
-              </svg>
+            <button onClick={onNewMatch} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition flex items-center gap-2">
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 4v16m8-8H4" /></svg>
               New Live Match
             </button>
-            <button
-              onClick={onNewNonLiveMatch}
-              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition flex items-center gap-2"
-            >
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 4v16m8-8H4" />
-              </svg>
+            <button onClick={onNewNonLiveMatch} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition flex items-center gap-2">
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 4v16m8-8H4" /></svg>
               New Match
             </button>
           </div>
         )}
       </div>
 
-      {/* Filters */}
+      {/* Filters — always full width */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {[
           { key: "all", label: "All", count: allMatches.length },
@@ -1201,9 +1307,7 @@ function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLive
             key={f.key}
             onClick={() => setFilter(f.key)}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap ${
-              filter === f.key
-                ? "bg-blue-600 text-white"
-                : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              filter === f.key ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
             }`}
           >
             {f.label} {f.count > 0 && <span className="opacity-70">({f.count})</span>}
@@ -1211,110 +1315,36 @@ function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLive
         ))}
       </div>
 
-      {/* Matches List */}
-      {filteredMatches.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-          <div className="text-gray-400 flex justify-center mb-4">
-            <Icon name="soccer" size={48} />
-          </div>
-          <p className="text-gray-600 font-medium">No matches found</p>
-          <p className="text-sm text-gray-500 mt-1">
-            {filter === "all" ? "Create your first match to get started" : `No ${filter} matches`}
-          </p>
-          {canEdit && filter === "all" && (
-            <div className="mt-4 flex gap-2 justify-center">
-              <button
-                onClick={onNewMatch}
-                className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition"
-              >
-                New Live Match
-              </button>
-              <button
-                onClick={onNewNonLiveMatch}
-                className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition"
-              >
-                New Match
+      {/* Split: list left, panel right */}
+      <div className="flex gap-5 items-start">
+        {/* Match list — sidebar on desktop, full width on mobile (hidden when panel open on mobile) */}
+        <div className={selectedMatchId && state.currentMatch ? "hidden md:block md:w-80 md:shrink-0" : "flex-1"}>
+          {matchCards}
+        </div>
+
+        {/* Detail panel — always visible on desktop when a match is selected, full screen on mobile */}
+        {selectedMatchId && state.currentMatch ? (
+          <div className="flex-1 min-w-0">
+            {/* Mobile back button */}
+            <div className="md:hidden mb-4">
+              <button onClick={() => setSelectedMatchId(null)} className="flex items-center gap-2 text-sm text-blue-600 font-medium">
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+                Back to matches
               </button>
             </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredMatches.map((match) => {
-            const result = getMatchResult(match);
-            return (
-              <div
-                key={match.id}
-                onClick={() => {
-                  if (match.status === "setup") {
-                    dispatch({ type: "LOAD_MATCH", matchId: match.id });
-                    dispatch({ type: "SET_VIEW", view: "setup" });
-                  } else if (match.status === "live") {
-                    dispatch({ type: "LOAD_MATCH", matchId: match.id });
-                    dispatch({ type: "SET_VIEW", view: "match" });
-                  } else {
-                    dispatch({ type: "LOAD_MATCH", matchId: match.id });
-                    dispatch({ type: "SET_VIEW", view: "match-edit" });
-                  }
-                }}
-                className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition cursor-pointer ${
-                  result ? resultColors[result] : ""
-                }`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  {/* Left: Match Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-gray-500">{formatDate(match.date)}</span>
-                      {match.tag && (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-md">
-                          {match.tag}
-                        </span>
-                      )}
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded-md ${statusColors[match.status]}`}>
-                        {match.status === "setup" ? "Upcoming" : match.status === "live" ? "Live" : "Completed"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm ${match.venue === "home" ? "font-semibold text-gray-900" : "text-gray-600"}`}>
-                          {state.teamTitle || "Us"}
-                        </span>
-                        {match.venue === "home" && <span className="text-xs">🏠</span>}
-                      </div>
-
-                      {match.status !== "setup" && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-bold text-gray-900">{match.teamGoals}</span>
-                          <span className="text-gray-400">-</span>
-                          <span className="text-lg font-bold text-gray-900">{match.opponentGoals}</span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        {match.venue === "away" && <span className="text-xs">✈️</span>}
-                        <span className={`text-sm ${match.venue === "away" ? "font-semibold text-gray-900" : "text-gray-600"}`}>
-                          {match.opponent}
-                        </span>
-                      </div>
-                    </div>
-
-                    {match.description && (
-                      <p className="text-xs text-gray-500 mt-2 line-clamp-1">{match.description}</p>
-                    )}
-                  </div>
-
-                  {/* Right: Action Icon */}
-                  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400 shrink-0">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </div>
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-y-auto max-h-[calc(100vh-12rem)]">
+              <div className="p-5">
+                <MatchEdit key={selectedMatchId} state={state} dispatch={dispatch} canEdit={canEdit} onBack={() => setSelectedMatchId(null)} />
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          </div>
+        ) : (
+          // Empty right panel placeholder so the list doesn't stretch full width on desktop when no match loaded yet
+          <div className="hidden md:block flex-1" />
+        )}
+      </div>
     </div>
   );
 }
@@ -1921,7 +1951,7 @@ function LiveMatch({ state, dispatch, canEdit = true }) {
 
 const DRAWER_DURATION_MS = 300;
 
-function MatchEdit({ state, dispatch, canEdit = true }) {
+function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
   const match = state.currentMatch;
   const isCompleted = match.status === "completed";
   const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
@@ -1937,7 +1967,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
   const [editAssists, setEditAssists] = useState(0);
   const [editNotes, setEditNotes] = useState("");
   const [editPosition, setEditPosition] = useState({ role: null, side: null });
-  const goBack = () => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" });
+  const goBack = onBack || (() => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" }));
   const totalMatchMins = isCompleted ? Math.round(match.matchSeconds / 60) : 0;
   const clubNames = state.clubs.map((c) => c.name);
 
@@ -2051,7 +2081,7 @@ function MatchEdit({ state, dispatch, canEdit = true }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Btn variant="ghost" size="sm" onClick={goBack}><Icon name="back" /></Btn>
+        {!onBack && <Btn variant="ghost" size="sm" onClick={goBack}><Icon name="back" /></Btn>}
         <h1 className="text-xl font-bold text-gray-900 flex-1">Edit Match</h1>
         <Btn variant="default" size="sm" onClick={() => exportMatchCSV(match)}>Export</Btn>
       </div>
