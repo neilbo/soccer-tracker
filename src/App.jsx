@@ -82,21 +82,65 @@ function saveState(state) {
 async function loadFromSupabase(teamId) {
   if (!supabase || !teamId) return null;
   try {
-    const { data, error } = await supabase.from("app_state").select("data").eq("id", teamId).single();
-    if (error || !data?.data) return null;
+    const [blobResult, matchesResult, playersResult, maxPlayerResult] = await Promise.all([
+      supabase.from("app_state").select("data").eq("id", teamId).single(),
+      supabase.from("matches").select("*").eq("team_id", teamId).order("date", { ascending: true }),
+      supabase.from("match_players").select("*"),
+      supabase.from("players").select("id").order("id", { ascending: false }).limit(1).single(),
+    ]);
+
+    if (blobResult.error || !blobResult.data?.data) return null;
+
+    const loadedData = blobResult.data.data;
 
     // Fetch the max player ID globally to ensure uniqueness across all teams
-    const { data: maxPlayerData } = await supabase
-      .from("players")
-      .select("id")
-      .order("id", { ascending: false })
-      .limit(1)
-      .single();
+    if (maxPlayerResult.data?.id) {
+      loadedData.nextPlayerId = Math.max(loadedData.nextPlayerId || 0, maxPlayerResult.data.id + 1);
+    }
 
-    const loadedData = data.data;
-    // Set nextPlayerId to max + 1 to avoid conflicts across teams
-    if (maxPlayerData?.id) {
-      loadedData.nextPlayerId = Math.max(loadedData.nextPlayerId || 0, maxPlayerData.id + 1);
+    // Reconstruct matches from normalized tables and merge with blob
+    // This recovers matches that were synced to the matches table but missed the blob
+    if (matchesResult.data?.length) {
+      const matchPlayersByMatch = {};
+      for (const mp of matchesResult.data || []) {
+        if (!matchPlayersByMatch[mp.id]) matchPlayersByMatch[mp.id] = [];
+      }
+      for (const mp of (playersResult.data || [])) {
+        if (!matchPlayersByMatch[mp.match_id]) matchPlayersByMatch[mp.match_id] = [];
+        matchPlayersByMatch[mp.match_id].push({
+          id: mp.player_id,
+          name: mp.player_name,
+          seconds: mp.seconds ?? 0,
+          starting: !!mp.starting,
+          goals: mp.goals ?? 0,
+          assists: mp.assists ?? 0,
+          notes: mp.notes || "",
+          events: mp.events || [],
+          position: { role: mp.position_role || null, side: mp.position_side || null },
+        });
+      }
+
+      const normalizedMatches = matchesResult.data
+        .filter((m) => !m.deleted_at)
+        .map((m) => ({
+          id: m.id,
+          opponent: m.opponent || "",
+          venue: m.venue || "home",
+          date: m.date || "",
+          description: m.description || "",
+          tag: m.tag || "",
+          status: m.status || "setup",
+          teamGoals: m.team_goals ?? 0,
+          opponentGoals: m.opponent_goals ?? 0,
+          matchSeconds: m.match_seconds ?? 0,
+          matchRunning: !!m.match_running,
+          players: matchPlayersByMatch[m.id] || [],
+        }));
+
+      // Use normalized matches if there are more than what the blob has
+      if (normalizedMatches.length > (loadedData.matches?.length || 0)) {
+        loadedData.matches = normalizedMatches;
+      }
     }
 
     return loadedData;
@@ -145,6 +189,7 @@ async function syncNormalizedToSupabase(state, teamId) {
           opponent_goals: m.opponentGoals ?? 0,
           match_seconds: m.matchSeconds ?? 0,
           match_running: !!m.matchRunning,
+          deleted_at: m.deletedAt || null,
         },
         { onConflict: "id" }
       );
@@ -524,7 +569,9 @@ function reducer(state, action) {
       if (!matchId) return state;
       return {
         ...state,
-        matches: state.matches.filter((m) => m.id !== matchId),
+        matches: state.matches.map((m) =>
+          m.id === matchId ? { ...m, deletedAt: new Date().toISOString() } : m
+        ),
         currentMatch: null,
         view: "dashboard",
       };
@@ -698,7 +745,7 @@ function getPlayerStints(player, matchSeconds) {
 // --- Export ---
 
 function exportDashboardCSV(state) {
-  const completed = state.matches.filter((m) => m.status === "completed");
+  const completed = state.matches.filter((m) => !m.deletedAt && m.status === "completed");
   let csv = "MATCH SUMMARY\nDate,Opponent,Venue,Tag,Goals For,Goals Against,Result,Match Time (min),Description\n";
   completed.forEach((m) => {
     const result = m.teamGoals > m.opponentGoals ? "Win" : m.teamGoals < m.opponentGoals ? "Loss" : "Draw";
@@ -1075,7 +1122,7 @@ function ClubsView({ state, dispatch, canEdit = true }) {
 
 function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLiveMatch }) {
   const [filter, setFilter] = useState("all");
-  const allMatches = [...state.matches].reverse();
+  const allMatches = [...state.matches].filter((m) => !m.deletedAt).reverse();
 
   const filteredMatches = allMatches.filter(match => {
     if (filter === "all") return true;
@@ -1282,7 +1329,7 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false, onNe
 
   const [sortKey, setSortKey] = useState("totalMinutes");
   const [sortDir, setSortDir] = useState("desc");
-  const matches = [...state.matches].reverse();
+  const matches = [...state.matches].filter((m) => !m.deletedAt).reverse();
   const completed = matches.filter((m) => m.status === "completed");
   const totalMatches = completed.length;
   const wins = completed.filter((m) => m.teamGoals > m.opponentGoals).length;
