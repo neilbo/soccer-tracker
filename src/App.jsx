@@ -137,8 +137,10 @@ async function loadFromSupabase(teamId) {
           players: matchPlayersByMatch[m.id] || [],
         }));
 
-      // Use normalized matches if there are more than what the blob has
-      if (normalizedMatches.length > (loadedData.matches?.length || 0)) {
+      // Compare non-deleted blob matches only — soft-deleted entries inflate the
+      // blob count and can hide new matches that only reached the normalized table.
+      const blobActiveCount = (loadedData.matches || []).filter((m) => !m.deletedAt).length;
+      if (normalizedMatches.length > blobActiveCount) {
         loadedData.matches = normalizedMatches;
       }
     }
