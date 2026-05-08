@@ -114,6 +114,7 @@ async function loadFromSupabase(teamId) {
           starting: !!mp.starting,
           goals: mp.goals ?? 0,
           assists: mp.assists ?? 0,
+          saves: mp.saves ?? 0,
           notes: mp.notes || "",
           events: mp.events || [],
           position: { role: mp.position_role || null, side: mp.position_side || null },
@@ -208,6 +209,7 @@ async function syncNormalizedToSupabase(state, teamId) {
             starting: !!p.starting,
             goals: p.goals ?? 0,
             assists: p.assists ?? 0,
+            saves: p.saves ?? 0,
             notes: p.notes || "",
             events: p.events || [],
             position_role: p.position?.role || null,
@@ -333,6 +335,7 @@ function reducer(state, action) {
           onField: false,
           goals: 0,
           assists: 0,
+          saves: 0,
           notes: "",
           events: [],
           position: { role: null, side: null },
@@ -541,6 +544,7 @@ function reducer(state, action) {
             onField: false,
             goals: 0,
             assists: 0,
+            saves: 0,
             notes: "",
             events: [],
             position: { role: null, side: null },
@@ -589,7 +593,7 @@ function reducer(state, action) {
         ...state.currentMatch,
         players: state.currentMatch.players.map((p) =>
           p.id === action.playerId
-            ? { ...p, seconds: action.seconds, goals: action.goals, assists: action.assists, notes: action.notes }
+            ? { ...p, seconds: action.seconds, goals: action.goals, assists: action.assists, saves: action.saves, notes: action.notes }
             : p
         ),
         teamGoals: Math.max(0, state.currentMatch.teamGoals + goalsDiff),
@@ -762,18 +766,19 @@ function exportDashboardCSV(state) {
   completed.forEach((m) => {
     m.players.forEach((p) => {
       if (!allPlayers[p.name])
-        allPlayers[p.name] = { name: p.name, totalMinutes: 0, matches: 0, goals: 0, assists: 0 };
+        allPlayers[p.name] = { name: p.name, totalMinutes: 0, matches: 0, goals: 0, assists: 0, saves: 0 };
       allPlayers[p.name].totalMinutes += Math.round(p.seconds / 60);
       if (p.seconds > 0) allPlayers[p.name].matches++;
       allPlayers[p.name].goals += p.goals;
       allPlayers[p.name].assists += p.assists;
+      allPlayers[p.name].saves += (p.saves ?? 0);
     });
   });
-  csv += "\nPLAYER STATS (ALL MATCHES)\nPlayer,Matches Played,Total Minutes,Goals,Assists\n";
+  csv += "\nPLAYER STATS (ALL MATCHES)\nPlayer,Matches Played,Total Minutes,Goals,Assists,Saves\n";
   Object.values(allPlayers)
     .sort((a, b) => b.totalMinutes - a.totalMinutes)
     .forEach((p) => {
-      csv += `"${p.name}",${p.matches},${p.totalMinutes},${p.goals},${p.assists}\n`;
+      csv += `"${p.name}",${p.matches},${p.totalMinutes},${p.goals},${p.assists},${p.saves}\n`;
     });
   const wins = completed.filter((m) => m.teamGoals > m.opponentGoals).length;
   const draws = completed.filter((m) => m.teamGoals === m.opponentGoals).length;
@@ -790,12 +795,12 @@ function exportMatchCSV(match) {
   let csv = `MATCH DETAILS\nOpponent,"${match.opponent}"\nDate,${formatDate(match.date)}\nVenue,${match.venue === "home" ? "Home" : "Away"}\nResult,${result}\nScore,${match.teamGoals} - ${match.opponentGoals}\nTotal Match Time,${formatTime(match.matchSeconds)}\n`;
   if (match.tag) csv += `Tag,"${match.tag}"\n`;
   if (match.description) csv += `Description,"${match.description.replace(/"/g, '""')}"\n`;
-  csv += "\nPLAYER STATS\nPlayer,Minutes Played,Minutes Off,Stints (On-Off),Goals,Assists,Notes\n";
+  csv += "\nPLAYER STATS\nPlayer,Minutes Played,Minutes Off,Stints (On-Off),Goals,Assists,Saves,Notes\n";
   sorted.forEach((p) => {
     const stints = getPlayerStints(p, match.matchSeconds);
     const stintStr = stints.map((s) => `${formatTime(s.on)}-${formatTime(s.off)}`).join("; ");
     const minsOff = Math.round(match.matchSeconds / 60) - Math.round(p.seconds / 60);
-    csv += `"${p.name}",${Math.round(p.seconds / 60)},${Math.max(0, minsOff)},"${stintStr}",${p.goals},${p.assists},"${(p.notes || "").replace(/"/g, '""')}"\n`;
+    csv += `"${p.name}",${Math.round(p.seconds / 60)},${Math.max(0, minsOff)},"${stintStr}",${p.goals},${p.assists},${p.saves ?? 0},"${(p.notes || "").replace(/"/g, '""')}"\n`;
   });
   downloadCSV(csv, `Match_vs_${match.opponent}_${formatDate(match.date)}.csv`);
 }
@@ -821,14 +826,16 @@ function PositionSelector({ position, onChange, disabled = false }) {
   const handleRoleClick = (newRole) => {
     if (disabled) return;
     if (newRole === 'GK') {
-      // GK has no sides, just set it directly
       onChange({ role: newRole, side: null });
       setExpandedRole(null);
     } else {
-      // For DEF, MID, FWD - toggle expansion
       if (expandedRole === newRole) {
         setExpandedRole(null);
       } else {
+        // Set the role immediately; side is optional
+        if (role !== newRole) {
+          onChange({ role: newRole, side: null });
+        }
         setExpandedRole(newRole);
       }
     }
@@ -836,7 +843,9 @@ function PositionSelector({ position, onChange, disabled = false }) {
 
   const handleSideChange = (newSide) => {
     if (disabled) return;
-    onChange({ role: expandedRole, side: newSide });
+    // Toggle: clicking the already-selected side clears it
+    const newSideValue = role === expandedRole && side === newSide ? null : newSide;
+    onChange({ role: expandedRole, side: newSideValue });
     setExpandedRole(null);
   };
 
@@ -876,15 +885,22 @@ function PositionSelector({ position, onChange, disabled = false }) {
       </div>
       {expandedRole && !disabled && (
         <div className="flex gap-1.5 pl-2">
-          {sides.map((s) => (
-            <button
-              key={s}
-              onClick={() => handleSideChange(s)}
-              className="flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition bg-white text-blue-500 border-2 border-blue-400 hover:bg-blue-50"
-            >
-              {s === 'L' ? 'Left' : s === 'C' ? 'Centre' : 'Right'}
-            </button>
-          ))}
+          {sides.map((s) => {
+            const isSideSelected = role === expandedRole && side === s;
+            return (
+              <button
+                key={s}
+                onClick={() => handleSideChange(s)}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition border-2 ${
+                  isSideSelected
+                    ? 'bg-blue-500 text-white border-blue-500'
+                    : 'bg-white text-blue-500 border-blue-400 hover:bg-blue-50'
+                }`}
+              >
+                {s === 'L' ? 'Left' : s === 'C' ? 'Centre' : 'Right'}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1372,11 +1388,12 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false, onNe
   const allPlayers = {};
   completed.forEach((m) => {
     m.players.forEach((p) => {
-      if (!allPlayers[p.name]) allPlayers[p.name] = { name: p.name, totalMinutes: 0, matches: 0, goals: 0, assists: 0 };
+      if (!allPlayers[p.name]) allPlayers[p.name] = { name: p.name, totalMinutes: 0, matches: 0, goals: 0, assists: 0, saves: 0 };
       allPlayers[p.name].totalMinutes += Math.round(p.seconds / 60);
       if (p.seconds > 0) allPlayers[p.name].matches++;
       allPlayers[p.name].goals += p.goals;
       allPlayers[p.name].assists += p.assists;
+      allPlayers[p.name].saves += (p.saves ?? 0);
     });
   });
 
@@ -1470,6 +1487,12 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false, onNe
                     {sortKey === "assists" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
                   </div>
                 </th>
+                <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("saves")}>
+                  <div className="flex items-center justify-center gap-1">
+                    🧤
+                    {sortKey === "saves" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                  </div>
+                </th>
               </tr></thead>
               <tbody>{playerStats.map((p, index) => (
                 <tr key={p.name} className={`border-b border-gray-50 ${index % 2 === 0 ? 'bg-blue-50/50' : 'bg-white'} hover:bg-blue-50`}>
@@ -1478,6 +1501,7 @@ function Dashboard({ state, dispatch, canEdit = true, isSuperAdmin = false, onNe
                   <td className="p-3 text-center">{p.totalMinutes}</td>
                   <td className="p-3 text-center">{p.goals}</td>
                   <td className="p-3 text-center">{p.assists}</td>
+                  <td className="p-3 text-center">{p.saves}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -1845,8 +1869,8 @@ function LiveMatch({ state, dispatch, canEdit = true }) {
               {expanded === p.id && (
                 <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
                   {canEdit && (
-                    <div className="grid grid-cols-2 gap-2">
-                      {[{ key: "goals", label: "⚽ Goals" }, { key: "assists", label: "🅰️ Assists" }].map((s) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[{ key: "goals", label: "⚽ Goals" }, { key: "assists", label: "🅰️ Assists" }, { key: "saves", label: "🧤 Saves" }].map((s) => (
                         <div key={s.key} className="text-center">
                           <div className="text-xs text-gray-500 mb-1">{s.label}</div>
                           <div className="flex items-center justify-center gap-1">
@@ -1967,6 +1991,7 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
   const [editMinsOn, setEditMinsOn] = useState(0);
   const [editGoals, setEditGoals] = useState(0);
   const [editAssists, setEditAssists] = useState(0);
+  const [editSaves, setEditSaves] = useState(0);
   const [editNotes, setEditNotes] = useState("");
   const [editPosition, setEditPosition] = useState({ role: null, side: null });
   const goBack = onBack || (() => dispatch({ type: "SET_VIEW", view: isCompleted ? "dashboard" : "setup" }));
@@ -2046,6 +2071,7 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
     setEditMinsOn(Math.round(player.seconds / 60));
     setEditGoals(player.goals);
     setEditAssists(player.assists);
+    setEditSaves(player.saves ?? 0);
     setEditNotes(player.notes || "");
     setEditPosition(player.position || { role: null, side: null });
     setEditDrawerOpen(true);
@@ -2064,6 +2090,7 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
       seconds: newSeconds,
       goals: Number(editGoals) || 0,
       assists: Number(editAssists) || 0,
+      saves: Number(editSaves) || 0,
       notes: editNotes,
     });
 
@@ -2206,6 +2233,12 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
                       {sortKey === "assists" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
                     </div>
                   </th>
+                  <th className="p-3 text-center cursor-pointer hover:bg-gray-50 transition select-none" onClick={() => handleSort("saves")}>
+                    <div className="flex items-center justify-center gap-1">
+                      🧤
+                      {sortKey === "saves" && <span className="text-blue-600">{sortDir === "asc" ? "↑" : "↓"}</span>}
+                    </div>
+                  </th>
                 </tr></thead>
                 <tbody>{sorted.map((p, index) => {
                   const minsOn = Math.round(p.seconds / 60);
@@ -2218,6 +2251,7 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
                       <td className="p-3 text-center font-mono text-gray-400">{minsOff}′</td>
                       <td className="p-3 text-center">{p.goals}</td>
                       <td className="p-3 text-center">{p.assists}</td>
+                      <td className="p-3 text-center">{p.saves ?? 0}</td>
                     </tr>
                   );
                 })}</tbody>
@@ -2282,11 +2316,11 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
                         />
                         <p className="text-xs text-gray-500 mt-1">Max: {totalMatchMins} minutes</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">⚽ Goals</label>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => setEditGoals(Math.max(0, (Number(editGoals) || 0) - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setEditGoals(Math.max(0, (Number(editGoals) || 0) - 1))} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-base shrink-0">−</button>
                             <input
                               type="number"
                               min={0}
@@ -2307,15 +2341,15 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
                                   setEditGoals(0);
                                 }
                               }}
-                              className="flex-1 px-4 py-2.5 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-lg"
+                              className="flex-1 min-w-0 px-1 py-2 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-base"
                             />
-                            <button onClick={() => setEditGoals((Number(editGoals) || 0) + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
+                            <button onClick={() => setEditGoals((Number(editGoals) || 0) + 1)} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-base shrink-0">+</button>
                           </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">🅰️ Assists</label>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => setEditAssists(Math.max(0, (Number(editAssists) || 0) - 1))} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">−</button>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setEditAssists(Math.max(0, (Number(editAssists) || 0) - 1))} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-base shrink-0">−</button>
                             <input
                               type="number"
                               min={0}
@@ -2336,9 +2370,38 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
                                   setEditAssists(0);
                                 }
                               }}
-                              className="flex-1 px-4 py-2.5 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-lg"
+                              className="flex-1 min-w-0 px-1 py-2 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-base"
                             />
-                            <button onClick={() => setEditAssists((Number(editAssists) || 0) + 1)} className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-lg">+</button>
+                            <button onClick={() => setEditAssists((Number(editAssists) || 0) + 1)} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-base shrink-0">+</button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">🧤 Saves</label>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setEditSaves(Math.max(0, (Number(editSaves) || 0) - 1))} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-base shrink-0">−</button>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editSaves === '' ? '' : editSaves}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                  setEditSaves('');
+                                  return;
+                                }
+                                const num = parseInt(val, 10);
+                                if (!isNaN(num)) {
+                                  setEditSaves(Math.max(0, num));
+                                }
+                              }}
+                              onBlur={() => {
+                                if (editSaves === '') {
+                                  setEditSaves(0);
+                                }
+                              }}
+                              className="flex-1 min-w-0 px-1 py-2 text-center rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none font-bold text-base"
+                            />
+                            <button onClick={() => setEditSaves((Number(editSaves) || 0) + 1)} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-base shrink-0">+</button>
                           </div>
                         </div>
                       </div>
