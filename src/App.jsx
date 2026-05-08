@@ -1869,7 +1869,7 @@ function LiveMatch({ state, dispatch, canEdit = true }) {
               {expanded === p.id && (
                 <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
                   {canEdit && (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       {[{ key: "goals", label: "⚽ Goals" }, { key: "assists", label: "🅰️ Assists" }, { key: "saves", label: "🧤 Saves" }].map((s) => (
                         <div key={s.key} className="text-center">
                           <div className="text-xs text-gray-500 mb-1">{s.label}</div>
@@ -2316,7 +2316,7 @@ function MatchEdit({ state, dispatch, canEdit = true, onBack }) {
                         />
                         <p className="text-xs text-gray-500 mt-1">Max: {totalMatchMins} minutes</p>
                       </div>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">⚽ Goals</label>
                           <div className="flex items-center gap-1">
