@@ -795,12 +795,12 @@ function exportMatchCSV(match) {
   let csv = `MATCH DETAILS\nOpponent,"${match.opponent}"\nDate,${formatDate(match.date)}\nVenue,${match.venue === "home" ? "Home" : "Away"}\nResult,${result}\nScore,${match.teamGoals} - ${match.opponentGoals}\nTotal Match Time,${formatTime(match.matchSeconds)}\n`;
   if (match.tag) csv += `Tag,"${match.tag}"\n`;
   if (match.description) csv += `Description,"${match.description.replace(/"/g, '""')}"\n`;
-  csv += "\nPLAYER STATS\nPlayer,Minutes Played,Minutes Off,Stints (On-Off),Goals,Assists,Saves,Notes\n";
+  csv += "\nPLAYER STATS\nPlayer,Position,Minutes Played,Minutes Off,Stints (On-Off),Goals,Assists,Saves,Notes\n";
   sorted.forEach((p) => {
     const stints = getPlayerStints(p, match.matchSeconds);
     const stintStr = stints.map((s) => `${formatTime(s.on)}-${formatTime(s.off)}`).join("; ");
     const minsOff = Math.round(match.matchSeconds / 60) - Math.round(p.seconds / 60);
-    csv += `"${p.name}",${Math.round(p.seconds / 60)},${Math.max(0, minsOff)},"${stintStr}",${p.goals},${p.assists},${p.saves ?? 0},"${(p.notes || "").replace(/"/g, '""')}"\n`;
+    csv += `"${p.name}","${formatPosition(p.position)}",${Math.round(p.seconds / 60)},${Math.max(0, minsOff)},"${stintStr}",${p.goals},${p.assists},${p.saves ?? 0},"${(p.notes || "").replace(/"/g, '""')}"\n`;
   });
   downloadCSV(csv, `Match_vs_${match.opponent}_${formatDate(match.date)}.csv`);
 }
