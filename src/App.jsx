@@ -753,6 +753,34 @@ function getPlayerStints(player, matchSeconds) {
   return stints;
 }
 
+// Returns segments split by position changes, each with { on, off, position }
+function getPlayerSegmentsWithPosition(player, matchSeconds) {
+  const firstPosEvent = player.events.find((e) => e.type === "position");
+  let currentPosition = firstPosEvent ? firstPosEvent.from : player.position;
+  const segments = [];
+  let onTime = null;
+  let segPosition = null;
+  for (const e of player.events) {
+    if (e.type === "on") {
+      onTime = e.at;
+      segPosition = currentPosition;
+    } else if (e.type === "off" && onTime !== null) {
+      segments.push({ on: onTime, off: e.at, position: segPosition });
+      onTime = null;
+    } else if (e.type === "position") {
+      currentPosition = e.to;
+      if (onTime !== null) {
+        // Position changed while on field — close current segment, open new one
+        segments.push({ on: onTime, off: e.at, position: segPosition });
+        onTime = e.at;
+        segPosition = e.to;
+      }
+    }
+  }
+  if (onTime !== null) segments.push({ on: onTime, off: matchSeconds, position: segPosition });
+  return segments;
+}
+
 // --- Export ---
 
 function exportDashboardCSV(state) {
@@ -795,12 +823,17 @@ function exportMatchCSV(match) {
   let csv = `MATCH DETAILS\nOpponent,"${match.opponent}"\nDate,${formatDate(match.date)}\nVenue,${match.venue === "home" ? "Home" : "Away"}\nResult,${result}\nScore,${match.teamGoals} - ${match.opponentGoals}\nTotal Match Time,${formatTime(match.matchSeconds)}\n`;
   if (match.tag) csv += `Tag,"${match.tag}"\n`;
   if (match.description) csv += `Description,"${match.description.replace(/"/g, '""')}"\n`;
-  csv += "\nPLAYER STATS\nPlayer,Position,Minutes Played,Minutes Off,Stints (On-Off),Goals,Assists,Saves,Notes\n";
+  csv += "\nPLAYER STATS\nPlayer,Minutes Played,Minutes Off,Stints (On-Off with Position),Goals,Assists,Saves,Notes\n";
   sorted.forEach((p) => {
-    const stints = getPlayerStints(p, match.matchSeconds);
-    const stintStr = stints.map((s) => `${formatTime(s.on)}-${formatTime(s.off)}`).join("; ");
+    const segments = getPlayerSegmentsWithPosition(p, match.matchSeconds);
+    const stintStr = segments.length
+      ? segments.map((s) => {
+          const pos = formatPosition(s.position);
+          return pos && pos !== "-" ? `${formatTime(s.on)}-${formatTime(s.off)} (${pos})` : `${formatTime(s.on)}-${formatTime(s.off)}`;
+        }).join("; ")
+      : "";
     const minsOff = Math.round(match.matchSeconds / 60) - Math.round(p.seconds / 60);
-    csv += `"${p.name}","${formatPosition(p.position)}",${Math.round(p.seconds / 60)},${Math.max(0, minsOff)},"${stintStr}",${p.goals},${p.assists},${p.saves ?? 0},"${(p.notes || "").replace(/"/g, '""')}"\n`;
+    csv += `"${p.name}",${Math.round(p.seconds / 60)},${Math.max(0, minsOff)},"${stintStr}",${p.goals},${p.assists},${p.saves ?? 0},"${(p.notes || "").replace(/"/g, '""')}"\n`;
   });
   downloadCSV(csv, `Match_vs_${match.opponent}_${formatDate(match.date)}.csv`);
 }
