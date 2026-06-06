@@ -9,6 +9,7 @@ All notable changes to Soccer Tracker are recorded here, grouped by feature area
 - Supabase free-tier project paused after 7 days of inactivity (GitHub Action was only on `staging` branch, not `main`, so scheduled runs never fired).
 - On restore, `neilbo@outlook.com` was mapped to the wrong "U10 Academy" team (`3031e413`, empty) instead of the correct one (`785d0e08`, 12 players). No code was at fault — the `team_members` table had incorrect membership. Fixed by adding the outlook account to the correct team and removing it from the empty one via direct SQL. Player data was intact in `app_state` the entire time.
 - **To prevent recurrence:** merge `keep-supabase-alive.yml` workflow into `main` and add `SUPABASE_URL` / `SUPABASE_ANON_KEY` as GitHub Actions secrets.
+- Fixed keep-alive workflow pinging `/rest/v1/` (returns 401) → now pings `/rest/v1/teams` (returns 200). Workflow confirmed working.
 
 ---
 
