@@ -4,6 +4,14 @@ All notable changes to Soccer Tracker are recorded here, grouped by feature area
 
 ---
 
+## 2026-06-07
+### Database Fix — Supabase Auto-Pause Recovery
+- Supabase free-tier project paused after 7 days of inactivity (GitHub Action was only on `staging` branch, not `main`, so scheduled runs never fired).
+- On restore, `neilbo@outlook.com` was mapped to the wrong "U10 Academy" team (`3031e413`, empty) instead of the correct one (`785d0e08`, 12 players). No code was at fault — the `team_members` table had incorrect membership. Fixed by adding the outlook account to the correct team and removing it from the empty one via direct SQL. Player data was intact in `app_state` the entire time.
+- **To prevent recurrence:** merge `keep-supabase-alive.yml` workflow into `main` and add `SUPABASE_URL` / `SUPABASE_ANON_KEY` as GitHub Actions secrets.
+
+---
+
 ## 2026-05-19
 ### Export
 - **Position per stint** — match CSV now splits stints by position changes, showing each segment with its position (e.g. `00:00-45:00 (DEF-L); 45:00-90:00 (MID)`). Removed the flat "Position" column in favour of this richer per-segment format.
