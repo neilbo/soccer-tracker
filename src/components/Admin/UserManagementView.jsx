@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getAllUsers } from '../../supabaseClient';
 import { UserDetailsModal } from './UserDetailsModal';
+import { formatDate } from '../../format';
 
 export function UserManagementView() {
   const [users, setUsers] = useState([]);
@@ -60,12 +61,6 @@ export function UserManagementView() {
     filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     setFilteredUsers(filtered);
-  }
-
-  function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   function getTeamNames(user) {

@@ -6,6 +6,7 @@ import {
   createInvitation,
   createClubInvitation,
 } from '../../supabaseClient';
+import { formatDate } from '../../format';
 
 export function InvitationManagementView() {
   const [invitations, setInvitations] = useState([]);
@@ -141,12 +142,6 @@ export function InvitationManagementView() {
     }
 
     setFilteredInvitations(filtered);
-  }
-
-  function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   function isExpired(expiresAt) {

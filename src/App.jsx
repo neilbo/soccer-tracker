@@ -16,6 +16,7 @@ import { InvitationManagementView } from "./components/Admin/InvitationManagemen
 import { InvitationLanding } from "./components/Auth/InvitationLanding";
 import { useOfflineSyncContext } from "./contexts/OfflineSyncContext";
 import { OfflineIndicator } from "./components/OfflineIndicator";
+import { formatDate } from "./format";
 
 const DEFAULT_PLAYERS = [
   "Lionel Messi", "Cristiano Ronaldo", "Pelé", "Diego Maradona",
@@ -37,9 +38,6 @@ const formatTime = (seconds) => {
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
 };
-
-const formatDate = (d) =>
-  new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 
 const formatPosition = (position) => {
   if (!position || !position.role) return "-";
@@ -1212,15 +1210,6 @@ function MatchesView({ state, dispatch, canEdit = true, onNewMatch, onNewNonLive
     if (match.teamGoals > match.opponentGoals) return "win";
     if (match.teamGoals < match.opponentGoals) return "loss";
     return "draw";
-  };
-
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
   };
 
   const statusColors = {

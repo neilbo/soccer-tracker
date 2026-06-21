@@ -115,40 +115,6 @@ export function onAuthStateChange(callback) {
   });
 }
 
-/**
- * Send password reset email
- * @param {string} email - User's email
- * @returns {Promise<{error}>}
- */
-export async function resetPassword(email) {
-  if (!supabase) {
-    return { error: { message: "Supabase not configured" } };
-  }
-
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
-  });
-
-  return { error };
-}
-
-/**
- * Update user password
- * @param {string} newPassword - New password
- * @returns {Promise<{user, error}>}
- */
-export async function updatePassword(newPassword) {
-  if (!supabase) {
-    return { user: null, error: { message: "Supabase not configured" } };
-  }
-
-  const { data, error } = await supabase.auth.updateUser({
-    password: newPassword,
-  });
-
-  return { user: data?.user, error };
-}
-
 // ===== Team & User Helpers =====
 
 /**
